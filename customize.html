@@ -711,7 +711,7 @@
        --xxx variables prefill the editor and apply live so the user
        can Save them as a new theme. Hidden file input + visible button
        so the styling matches the rest of the toolbar. -->
-  <button type="button" id="btn-download-template" class="secondary" title="Download the active theme as a 3-file template (theme.css + theme.json + theme-preview.html). Edit theme.css in any editor, then re-import here.">Download template</button>
+  <button type="button" id="btn-download-template" class="secondary" title="Download a ZIP with theme.css + theme.json + theme-preview.html + README.md. Designers can edit theme.css in any editor and re-import here without site access.">Download template</button>
   <input type="file" id="import-html-file" accept=".html,.htm,text/html,.css,.json,application/json" multiple style="display:none;">
   <button type="button" id="btn-import-html" class="secondary" title="Import one or more theme files (.css / .json / .html). Multiple files are merged in selection order — later files win on conflicts.">Import theme</button>
   <!-- Unsaved-changes indicator. Appears the moment any editor input
@@ -780,6 +780,15 @@
      export — no side effects on the customize page). -->
 <script src="app/atomics.js"></script>
 <script src="app/surface-layout.js"></script>
+
+<!-- JSZip — used by Download template to bundle theme.css + theme.json
+     + theme-preview.html into a single .zip download. Without this,
+     browsers throttle the 3-file burst download to just the first file
+     (the css), breaking the workflow where designers receive the pack
+     from someone else. CDN is fine — small (~30KB minified), MIT,
+     widely cached. SRI hash pinned to the published 3.10.1 release. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"
+        referrerpolicy="no-referrer"></script>
 
 <script>
 'use strict';
@@ -2415,7 +2424,7 @@ function discardChanges() {
 //  browsers prompt "allow this site to download multiple files" the
 //  first time and remember the choice.
 // ---------------------------------------------------------------------------
-function downloadThemeTemplate() {
+async function downloadThemeTemplate() {
   const themeId = $('theme-select').value;
   const theme = THEMES.find(t => t.id === themeId);
   if (!theme) { showToast('Pick a theme first'); return; }
@@ -2509,24 +2518,56 @@ function downloadThemeTemplate() {
     '</div>\n' +
     '</body></html>\n';
 
-  // Trigger three downloads with small staggered delays — browsers
-  // throttle "burst" downloads from one user gesture but accept
-  // ~150ms-spaced ones reliably across Chrome / Safari / Firefox.
-  function _trigger(name, content, mime) {
-    const blob = new Blob([content], { type: mime + ';charset=utf-8' });
+  // README inside the ZIP — gives any designer who receives the file
+  // pack a 30-second orientation without needing access to the site.
+  const readme =
+    '# ' + (theme.name || 'Theme') + ' template\n\n' +
+    'Three files, one purpose: tweak the theme tokens of Samsung One UI GenUI.\n\n' +
+    '## Files\n\n' +
+    '- `theme.css` — the editable variables. Open in any code editor.\n' +
+    '- `theme.json` — machine-readable mirror (the tool reads this on import).\n' +
+    '- `theme-preview.html` — drag into a browser to see the cards rendered\n' +
+    '  with the current values.\n\n' +
+    '## Edit\n\n' +
+    'Open `theme.css`, change any `--variable` value, save, refresh the\n' +
+    'preview HTML to verify.\n\n' +
+    'Optional metadata at the top of `theme.css`:\n\n' +
+    '```css\n' +
+    '/*! oneui-theme: { "name": "Sunset Glow", "author": "you" } */\n' +
+    '```\n\n' +
+    '## Apply\n\n' +
+    'Send the updated `theme.css` (or all three files) to whoever runs\n' +
+    'the One UI GenUI site — they import via `/customize → Import theme`\n' +
+    'and click Save to register your work as a new theme preset.\n';
+
+  // Single ZIP download — bundling all three files dodges the browser's
+  // multi-download throttle that previously delivered only the first
+  // (theme.css), leaving designers without the json + preview files
+  // they need to verify their work locally.
+  if (typeof window.JSZip !== 'function') {
+    showToast('ERROR: ZIP library not loaded yet — refresh and retry');
+    return;
+  }
+  try {
+    const zip = new window.JSZip();
+    zip.file('theme.css',          css);
+    zip.file('theme.json',         json);
+    zip.file('theme-preview.html', html);
+    zip.file('README.md',          readme);
+    const baseId = (theme.id || 'theme').toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    const blob = await zip.generateAsync({ type: 'blob' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = name;
+    a.download = 'oneui-' + baseId + '-template.zip';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    showToast('Downloaded · oneui-' + baseId + '-template.zip (4 files inside)');
+  } catch (e) {
+    console.error('[customize] zip generation failed:', e);
+    showToast('ERROR: zip generation failed (' + e.message + ')');
   }
-  _trigger('theme.css',          css,  'text/css');
-  setTimeout(() => _trigger('theme.json',         json, 'application/json'), 180);
-  setTimeout(() => _trigger('theme-preview.html', html, 'text/html'),        360);
-
-  showToast('Downloaded · theme.css + theme.json + theme-preview.html');
 }
 
 // ---------------------------------------------------------------------------
@@ -2709,13 +2750,15 @@ async function importHTMLFile(file) { return importThemeFiles(file ? [file] : []
   });
 })();
 
-// Wire the Download template button — emits the css + json + preview
-// triple from whatever theme is currently selected in the dropdown.
+// Wire the Download template button — produces a single .zip with
+// theme.css + theme.json + theme-preview.html + README.md so designers
+// receive every file they need in one download (single-download keeps
+// the browser's multi-download throttle out of the picture).
 (function _wireDownloadTemplate() {
   const btn = document.getElementById('btn-download-template');
   if (!btn) return;
-  btn.addEventListener('click', () => {
-    try { downloadThemeTemplate(); }
+  btn.addEventListener('click', async () => {
+    try { await downloadThemeTemplate(); }
     catch (e) { console.error('[customize] download template failed:', e); showToast('ERROR: ' + e.message); }
   });
 })();
