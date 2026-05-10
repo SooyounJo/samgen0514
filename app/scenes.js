@@ -367,6 +367,7 @@ function _fullResetForGeneration() {
   if (frame) {
     delete frame.dataset.overlayActive;
     delete frame.dataset.overlayBase;
+    delete frame.dataset.overlayKind;
   }
 
   // 2. Clear Screens / Overlays active highlights so the sidebar
@@ -722,6 +723,23 @@ const PIPELINE_BODY_ATOMIC_ROLE = {
   'navigation_turn_card':      'now-bar',
   // chip / toggle rows
   'action_chip_row':           'action-row',
+  'floating_action_bar':       'action-row',
+  // Registry action primitives → real One UI chips (not generic oui-card stubs)
+  'btn-contained':             'action-row',
+  'btn-outlined':              'action-row',
+  'btn-flat':                  'action-row',
+  'fab':                       'action-row',
+  'chip':                      'action-row',
+  'button.dark':               'action-row',
+  'button.light':              'action-row',
+  'button.accent':             'action-row',
+  'button.galaxy-ai':          'action-row',
+  'button.header-small':       'action-row',
+  'media-card':                'media-card',
+  'music_progress_strip':      'progress-track',
+  'widget-small':              'focus-block',
+  'lock-screen.widget-activity': 'focus-block',
+  'lock-screen.widget-battery':  'focus-block',
   'quick_toggle_row':          'toggle-chip',
   // notifications
   'notification-card':         'notif-card',
@@ -729,8 +747,47 @@ const PIPELINE_BODY_ATOMIC_ROLE = {
   // lock-screen widgets that have direct atomics
   'lock-screen.clock':         'clock',
   'lock-screen.weather-date':  'weather-date',
-  'lock-screen.shortcut-circle':'shortcutLeft'
+  'lock-screen.shortcut-circle':'shortcutLeft',
+  // Dialog overlay primitives (registry IDs → palette atomics)
+  'dialog.icon-grid-box':       'dialog-icon-grid',
+  'dialog.browser-top-bar':     'dialog-browser-bar',
+  'dialog.website-share-header':'dialog-site-header',
+  'theme_summary_grid':         'focus-block-group'
 };
+
+// Media / timer / charging Now Bar strips — Samsung places these in the
+// bottom system band (above the home gesture), not under the app header.
+// Composer still emits them inside primary-task; we peel them out and
+// absolute-pin to zones.bottomNav here. Lock surfaces keep lock-template
+// bottom chrome (shortcuts) — skip docking there. Turn-by-turn
+// (navigation_turn_card) stays in content flow so map UIs can keep it high.
+const PIPELINE_NOWBAR_DOCK_BOTTOM_IDS = new Set([
+  'media_control_bar',
+  'now-bar.media-player',
+  'now-bar.dual-line',
+  'now-bar.single-line',
+  'now-bar.charging'
+]);
+
+function _pipelineUiLockish(uiState) {
+  const bs = uiState && uiState.baseSurface;
+  return bs === 'lock' || bs === 'lockscreen';
+}
+
+function _pipelineShouldDockNowBarChild(child) {
+  const cid = child && child.componentId;
+  return !!(cid && PIPELINE_NOWBAR_DOCK_BOTTOM_IDS.has(cid));
+}
+
+/** Layout rect for session strip inside bottomNav, leaving room for gesture pill. */
+function _pipelineRectBottomSessionNowBar(z) {
+  if (!z || !z.bottomNav) return null;
+  var nav = z.bottomNav;
+  var gestureReserve = 26;
+  var h = Math.max(56, Math.min(72, nav.h - gestureReserve - 6));
+  var y = nav.y + Math.max(2, (nav.h - gestureReserve - h) / 2);
+  return { x: nav.x, y: y, w: nav.w, h: h };
+}
 
 // Pick a now-bar variant.type from the child's componentId / slot / scenario
 // tags. Path B's now-bar atomic styles itself differently per type (media =
@@ -740,21 +797,110 @@ function _inferNowBarVariant(child, content, uiState) {
   const id   = (child && child.componentId) || '';
   const slot = (child && child.slot) || '';
   const tags = ((uiState && uiState.contextTags) || []).map(String);
+  const c    = content || {};
+  const cLabel = String(c.label || '');
+  const cValue = String(c.value || '');
+  const cBlob = (cLabel + ' ' + cValue).toLowerCase();
+  const cIcon = String(c.icon || '').toLowerCase();
 
   if (/charging/.test(id) || tags.indexOf('now-bar:charging') >= 0 || tags.indexOf('charging') >= 0) {
     return { type: 'charging', percent: 69 };
   }
-  if (/timer/.test(id) || /timer|workout/.test(slot) || tags.indexOf('now-bar:timer') >= 0 || tags.indexOf('workout') >= 0) {
-    return { type: 'timer', label: '00:05:39', icon: 'stopwatch' };
+  // Timer semantics must win over the substring "media" inside **media_control_bar** —
+  // otherwise cooking step timers render as a music strip (note icon + prev/play/next).
+  const timerBySlot = /timer|workout|session_timer|timer_strip/.test(slot);
+  const timerByTag = tags.indexOf('now-bar:timer') >= 0 || tags.indexOf('workout') >= 0;
+  const timerByIcon = cIcon === 'timer' || cIcon === 'stopwatch';
+  const timerByCopy =
+    /\b(timer|countdown|stopwatch|simmer)\b/.test(cBlob) ||
+    /\d{1,2}:\d{2}(:\d{2})?/.test(cLabel + ' ' + cValue);
+  if (/timer/.test(id) || timerBySlot || timerByTag || timerByIcon || (id === 'media_control_bar' && timerByCopy)) {
+    const merged = { type: 'timer', label: '00:00:00', icon: 'stopwatch', live: true };
+    const tv = (cValue + ' ' + cLabel).match(/\b(\d{1,2}:\d{2}(?::\d{2})?)\b/);
+    if (tv) merged.label = tv[1];
+    return merged;
   }
-  if (/media|player|playback/.test(id + ' ' + slot) || tags.indexOf('now-bar:media') >= 0 || tags.indexOf('media-playing') >= 0) {
+  // **media_control_bar** must default to playback (now-bar **media**), not **dual-line**.
+  // dual-line uses delivery-style placeholders (Uber Eats + car glyph) when title/subtitle
+  // are filled from track copy — the previous id!==media_control_bar guard blocked `media`
+  // here entirely. Timer branch above still wins when copy/slot is timer-like.
+  if (id === 'media_control_bar') {
+    const deliveryBar =
+      tags.indexOf('now-bar:delivery') >= 0 ||
+      /eta|delivery/.test(slot) ||
+      /\b(on the way|out for delivery|order (is )?on|arriv(es|ing))\b/i.test(cBlob);
+    if (!deliveryBar) {
+      return {
+        type: 'media',
+        title:   c.label || 'Now playing',
+        artist:  c.value || '',
+        marquee: (c.label && c.value)
+          ? c.label + ' · ' + c.value
+          : (c.label || c.value || '')
+      };
+    }
+  }
+  // Do not treat generic **media_control_bar** as media from the word "media" in its id.
+  if (
+    tags.indexOf('now-bar:media') >= 0 ||
+    tags.indexOf('media-playing') >= 0 ||
+    (id !== 'media_control_bar' && /media|player|playback/.test(id + ' ' + slot))
+  ) {
     return {
       type: 'media',
-      title:   content.label || 'Now playing',
-      artist:  content.value || '',
-      marquee: (content.label && content.value)
-        ? content.label + ' · ' + content.value
-        : (content.label || content.value || '')
+      title:   c.label || 'Now playing',
+      artist:  c.value || '',
+      marquee: (c.label && c.value)
+        ? c.label + ' · ' + c.value
+        : (c.label || c.value || '')
+    };
+  }
+  // **now-bar.dual-line** (or bare **now-bar**) is often mis-picked for a track row.
+  // Without delivery hints, dual-line renders delivery chrome (Uber Eats + car) while
+  // text is still song / artist — treat obvious playback metadata as **media**.
+  const nbDeliveryHints =
+    tags.indexOf('now-bar:delivery') >= 0 ||
+    /eta|delivery/.test(slot) ||
+    /\b(on the way|out for delivery|order (is )?on|arriv(es|ing)|\d+\s*min(?:utes)?\s+away)\b/i.test(cBlob);
+  const hasTrackSeparator = /[·•]/.test(cLabel + cValue);
+  const musicScenarioTags =
+    tags.some(t =>
+      /media-playing|now-bar:media|for-?you|discover|playlist|personalized\s+mix/i.test(t)
+    );
+  const nbPlaybackCopy =
+    /\s·\s/.test(cLabel + ' ' + cValue) ||
+    hasTrackSeparator ||
+    /\b(mix|playlist|album(\s+art)?|track|now playing|listening|podcast|radio|shuffle|resume\s+mix|liked\s+songs|dream\s+pop|synth)\b/i.test(cBlob) ||
+    /\b(spotify|apple music|youtube music|tidal|deezer|soundcloud)\b/.test(cBlob);
+  if (
+    (id === 'now-bar.dual-line' || id === 'now-bar') &&
+    !nbDeliveryHints &&
+    cLabel &&
+    cValue &&
+    (nbPlaybackCopy || musicScenarioTags)
+  ) {
+    return {
+      type: 'media',
+      title:   c.label || 'Now playing',
+      artist:  c.value || '',
+      marquee: c.label + ' · ' + c.value
+    };
+  }
+  // Catch-all: two-line **non-delivery** copy with artist/title separator (e.g. "M83 · …")
+  // still missed above — never fall through to Uber Eats stubs for that shape.
+  if (
+    (id === 'now-bar.dual-line' || id === 'now-bar') &&
+    !nbDeliveryHints &&
+    cLabel &&
+    cValue &&
+    hasTrackSeparator &&
+    !/\b(away|arriv|delivery|order\s+on|min\s+away)\b/i.test(cBlob)
+  ) {
+    return {
+      type: 'media',
+      title:   c.label || 'Now playing',
+      artist:  c.value || '',
+      marquee: c.label + ' · ' + c.value
     };
   }
   // Navigation turn-by-turn — gets its own rich type with parsed
@@ -806,7 +952,12 @@ function _parseNavVariant(content) {
   instruction = instruction.replace(/^[\s·•|]+|[\s·•|]+$/g, '').trim();
   if (!instruction) instruction = label.trim();
 
-  return { type: 'navigation', distance, eta, direction, instruction };
+  const imageUrl =
+    typeof c.imageUrl === 'string' ? c.imageUrl.trim()
+      : typeof c.image === 'string' ? c.image.trim()
+        : '';
+
+  return { type: 'navigation', distance, eta, direction, instruction, imageUrl };
 }
 
 // Parse input_summary_card content (form summaries — search query summary,
@@ -829,6 +980,11 @@ function _parseInputVariant(content) {
   const topicMatch = label.match(/[·•|]\s*(.+)$/);
   const topic = topicMatch ? topicMatch[1].trim() : '';
 
+  const imageUrl =
+    typeof c.imageUrl === 'string' ? c.imageUrl.trim()
+      : typeof c.image === 'string' ? c.image.trim()
+        : '';
+
   // Detail / facets — split value into chips if it has separators
   let detail = value;
   let facets = [];
@@ -837,7 +993,7 @@ function _parseInputVariant(content) {
     detail = '';
   }
 
-  return { kind: 'input', section, topic, detail, facets };
+  return { kind: 'input', section, topic, detail, facets, imageUrl };
 }
 
 // Parse reminder content: due time, task title, count, priority.
@@ -883,7 +1039,11 @@ function _parseReminderVariant(content) {
   if (count) sectionParts.push(count + ' ITEM' + (count === '1' ? '' : 'S'));
   const section = sectionParts.join(' · ');
 
-  return { kind: 'reminder', task, due, count, section };
+  const imgUrl =
+    typeof c.imageUrl === 'string' ? c.imageUrl.trim()
+      : typeof c.image === 'string' ? c.image.trim()
+        : '';
+  return { kind: 'reminder', task, due, count, section, imageUrl: imgUrl };
 }
 
 // Parse message content: sender, preview, time, count.
@@ -929,19 +1089,112 @@ function _parseMessageVariant(content) {
   if (time && time.toLowerCase() !== count) sectionParts.push(time.toUpperCase());
   const section = sectionParts.length ? 'MESSAGES · ' + sectionParts.join(' · ') : 'MESSAGES';
 
-  return { kind: 'message', sender, preview, count, time, section };
+  const imageUrl =
+    typeof c.imageUrl === 'string' ? c.imageUrl.trim()
+      : typeof c.image === 'string' ? c.image.trim()
+        : '';
+
+  return { kind: 'message', sender, preview, count, time, section, imageUrl };
 }
 
 // Parse ETA content: time, destination, traffic, route.
+// When uiState tags include commute/navigation (or content requests trip UI),
+// returns kind `active-trip` — in-trip card with progress bar + End trip
+// (GenUI travel / 교통 reference layout).
 // Examples:
-//   label="ETA · Home",        value="12 min · Light traffic"
-//   label="Arrival · Office",  value="8 min via Hangang-daero"
-//   label="To Airport",        value="35 min · Heavy traffic"
-function _parseEtaVariant(content) {
+//   label="ETA · home", value="12 min · Light traffic"  → classic eta
+//   + contextTags commute + label "Drive 1 min (500 m)" → active-trip
+function _parseEtaVariant(content, uiState) {
   const c     = content || {};
   const label = String(c.label || '');
   const value = String(c.value || '');
   const all   = label + ' · ' + value;
+
+  const tags = (uiState && Array.isArray(uiState.contextTags))
+    ? uiState.contextTags.map(String)
+    : [];
+  const tagSet = new Set(tags.map(t => t.toLowerCase()));
+  const tagTrip =
+    c.tripSession === true ||
+    c.activeTrip === true ||
+    String(c.layout || '').toLowerCase() === 'trip-session' ||
+    tagSet.has('trip-session') ||
+    tagSet.has('active-trip') ||
+    tagSet.has('in-trip');
+  const tagNav =
+    tagSet.has('commute') ||
+    tagSet.has('navigation') ||
+    tagSet.has('maps') ||
+    tagSet.has('gps');
+
+  const imageUrl =
+    typeof c.imageUrl === 'string' ? c.imageUrl.trim()
+      : typeof c.image === 'string' ? c.image.trim()
+        : '';
+
+  const explicitHead = String(c.headline || c.head || '').trim();
+  const explicitArr  = String(c.arrival || '').trim();
+  const explicitAddr = String(c.address || c.destinationLine || '').trim();
+
+  const useActiveTrip =
+    c.tripSession !== false &&
+    (tagTrip ||
+      (explicitHead && explicitArr) ||
+      (tagNav && (/\b(drive|driving|navigat|turn|route|\d+\s*min|m\)|km|arrival|도착)\b/i.test(all) || explicitAddr.length > 8)));
+
+  if (useActiveTrip) {
+    const headline =
+      explicitHead ||
+      (label.trim() ? label.trim() : (function () {
+        const etaMinMatch = all.match(/\b(\d{1,3}\s*(?:min|m\b))\b/i);
+        const distMatch = all.match(/\(\s*([^)]+)\s*\)/);
+        if (etaMinMatch && distMatch) return 'Drive ' + etaMinMatch[1] + ' (' + distMatch[1] + ')';
+        if (etaMinMatch) return 'Drive ' + etaMinMatch[1];
+        return 'Drive 1 min (500 m)';
+      })());
+    let arrival = explicitArr;
+    if (!arrival) {
+      const am = value.match(/\bArrival\s*:\s*([^\n·|]+)/i) || all.match(/\bArrival\s*:\s*([^\n·|]+)/i);
+      arrival = am ? am[1].trim() : '';
+    }
+    if (!arrival) {
+      const tm = all.match(/\b(\d{1,2}:\d{2}\s*(?:AM|PM|am|pm)?)/);
+      arrival = tm ? 'Arrival: ' + tm[1] : '';
+    }
+    let address = explicitAddr;
+    if (!address) {
+      const dm = label.match(/(?:ETA|Arrival|To|Going to|Heading to)[\s·]+(.+?)$/i);
+      const destFromLabel = dm ? dm[1].trim() : '';
+      const addrM = value.match(/\d[^·\n]*(?:Rd|Street|St|Ave|Avenue|Blvd|Dr|Road|R\s|길|로|번지)[^·\n]*/i);
+      address = (addrM && addrM[0].trim()) || destFromLabel || '';
+    }
+    let pct = c.percent != null ? +c.percent : NaN;
+    if (!Number.isFinite(pct)) pct = NaN;
+    if (!Number.isFinite(pct) && c.progress != null) pct = +c.progress;
+    if (!Number.isFinite(pct) || pct < 0 || pct > 100) pct = 48;
+    const endLabel = String(c.endLabel || c.endTripLabel || 'End Trip').trim() || 'End Trip';
+    const pinIconUrl =
+      typeof c.pinIconUrl === 'string' ? c.pinIconUrl.trim()
+        : typeof c.pinUrl === 'string' ? c.pinUrl.trim()
+          : '';
+    const thumbIconUrl =
+      typeof c.thumbIconUrl === 'string' ? c.thumbIconUrl.trim()
+        : typeof c.carIconUrl === 'string' ? c.carIconUrl.trim()
+          : '';
+    return {
+      kind: 'active-trip',
+      headline,
+      arrival,
+      address,
+      percent: pct,
+      endLabel,
+      imageUrl,
+      pinIconUrl,
+      thumbIconUrl,
+      accent: typeof c.accent === 'string' ? c.accent : '#14B8A6',
+      fillColor: typeof c.fillColor === 'string' ? c.fillColor : '#0A84FF'
+    };
+  }
 
   // ETA: "12 min", "1 h 5 min", "35 min"
   let eta = '';
@@ -967,7 +1220,7 @@ function _parseEtaVariant(content) {
   const routeMatch = all.match(/\bvia\s+(.+?)$/i);
   const route = routeMatch ? routeMatch[0] : '';
 
-  return { kind: 'eta', eta, destination, traffic, route };
+  return { kind: 'eta', eta, destination, traffic, route, imageUrl };
 }
 
 // Parse notification content: app name, time, body, glyph.
@@ -1065,7 +1318,12 @@ function _parseCalendarVariant(content) {
     if (labelStripped) title = labelStripped;
   }
 
-  return { kind: 'calendar', time, duration, title, location, section };
+  const imageUrl =
+    typeof c.imageUrl === 'string' ? c.imageUrl.trim()
+      : typeof c.image === 'string' ? c.image.trim()
+        : '';
+
+  return { kind: 'calendar', time, duration, title, location, section, imageUrl };
 }
 
 // Parse the LLM's free-form weather content (e.g. label="San Francisco ·
@@ -1168,35 +1426,108 @@ function _adaptForBodyAtomic(atomicRole, child, content, uiState) {
         break;
       }
       if (child.componentId === 'eta_card') {
-        comp.variant = _parseEtaVariant(c);
+        comp.variant = Object.assign(
+          _parseEtaVariant(c, uiState),
+          child && typeof child.variant === 'object' && child.variant !== null ? child.variant : {}
+        );
         break;
       }
       if (child.componentId === 'input_summary_card') {
         comp.variant = _parseInputVariant(c);
         break;
       }
+      const img =
+        typeof c.imageUrl === 'string' ? c.imageUrl.trim()
+          : typeof c.image === 'string' ? c.image.trim()
+            : '';
+      const childV =
+        child && typeof child.variant === 'object' && child.variant !== null ? child.variant : {};
+      if (childV.kind === 'running' || childV.kind === 'workout') {
+        var rvImg =
+          img ||
+          (typeof childV.imageUrl === 'string' ? childV.imageUrl.trim()
+            : typeof childV.coverUrl === 'string' ? childV.coverUrl.trim()
+              : typeof childV.iconUrl === 'string' ? childV.iconUrl.trim()
+                : '');
+        var rvPct = childV.percent != null ? +childV.percent : NaN;
+        if (!Number.isFinite(rvPct) && c.value != null) {
+          var rvTry = parseFloat(String(c.value).replace(/%/g, ''));
+          if (Number.isFinite(rvTry) && rvTry >= 0 && rvTry <= 100) rvPct = rvTry;
+        }
+        if (!Number.isFinite(rvPct)) rvPct = 11;
+        comp.variant = Object.assign({}, childV, {
+          kind: childV.kind,
+          title: childV.title || childV.headline || c.label || 'Running',
+          headline: childV.headline || childV.title || c.label,
+          stats: childV.stats || childV.subtitle || c.value || '',
+          subtitle: childV.subtitle,
+          percent: rvPct,
+          pauseLabel: childV.pauseLabel || 'Pause',
+          finishLabel: childV.finishLabel || 'Finish',
+          accent: childV.accent || '#34d399'
+        }, rvImg ? { imageUrl: rvImg } : {});
+        break;
+      }
       // For richer content (recipe step instructions) use kind='secondary'
       // so value renders as a body paragraph; for short content use the
       // default kind which renders title + sub.
       const hasBody = (c.value || '').length > 28;
-      comp.variant = hasBody
-        ? { kind: 'secondary', title: c.label || child.slot || child.componentId, body: c.value }
-        : { title: c.label || child.slot || child.componentId, sub: c.value || '' };
+      if (hasBody) {
+        comp.variant = Object.assign(
+          { kind: 'secondary', title: c.label || child.slot || child.componentId, body: c.value },
+          img ? { imageUrl: img } : {}
+        );
+      } else {
+        comp.variant = Object.assign(
+          { title: c.label || child.slot || child.componentId, sub: c.value || '' },
+          img ? { imageUrl: img } : {}
+        );
+      }
       break;
     }
     case 'now-bar': {
       comp.variant = _inferNowBarVariant(child, c, uiState);
       break;
     }
+    case 'media-card': {
+      comp.variant = {
+        title:   c.title  || c.label || '',
+        artist:  c.artist || c.value || '',
+        service: c.service || ''
+      };
+      break;
+    }
+    case 'progress-track': {
+      var ptRaw = (child && typeof child.variant === 'object' && child.variant !== null) ? child.variant : {};
+      comp.variant = Object.assign({}, ptRaw);
+      if (child && child.componentId === 'music_progress_strip') {
+        comp.variant.layout = comp.variant.layout || 'music-strip';
+      }
+      if (c.value != null && String(c.value).trim() !== '') {
+        var ptNum = +c.value;
+        if (Number.isFinite(ptNum)) {
+          comp.variant.percent = Math.max(0, Math.min(100, ptNum));
+        }
+      }
+      break;
+    }
     case 'action-row': {
+      const _rasterActionIcon = (v) => {
+        if (v == null || v === '') return '';
+        const t = String(v).trim();
+        if (!t || /[\s"'<>]/.test(t)) return '';
+        if (/^https?:\/\//i.test(t)) return t;
+        if (/^app-icons\//i.test(t)) return t;
+        if (/^assets\//i.test(t)) return t;
+        if (/^\/(?!\/)/.test(t)) return t;
+        return '';
+      };
       // VERIFIED at surface-layout.js:1342 — atomic expects
       // variant.actions = [{label, icon?, kind?}, …] (objects, not strings).
       // We try BOTH label and value so the LLM can put a list in either.
       // Per-action icon is inferred from the label keyword: "save" → save
       // glyph, "share" → share glyph, etc. — the renderer reads action.icon
       // and renders the SVG inline.
-      const labelSrc = c.label || c.value || '';
-      const labels = labelSrc.split(/\s*[,/|·•]\s*/).map(s => s.trim()).filter(Boolean);
       const ICON_KEYWORDS = [
         [/save|bookmark/i,         'bookmark'],
         [/share|send/i,            'share'],
@@ -1208,18 +1539,96 @@ function _adaptForBodyAtomic(atomicRole, child, content, uiState) {
         [/comment|reply|message/i, 'comment'],
         [/play|start/i,            'play'],
         [/pause|stop/i,            'pause'],
-        [/skip|next/i,             'skip-forward'],
+        [/repeat|replay|redo/i,    'repeat'],
+        [/next\s+step|^next\b|\bskip\b/i, 'skip-forward'],
         [/back|previous/i,         'skip-back'],
+        [/read\b|ingredients|recipe\s+list/i, 'book'],
+        [/route|directions|navigate|commute|\beta\b|map\b|trail|loop\b/i, 'pin'],
+        [/skip\s+song|next\s+track/i, 'skip-forward'],
+        [/lap\b|split\b|pace\b/i, 'clock'],
         [/add|plus|new/i,          'plus'],
         [/cancel|close|dismiss/i,  'x'],
         [/ok|confirm|done|accept/i,'check'],
         [/settings|options/i,      'settings'],
-        [/search|find/i,           'search']
+        [/search|find/i,           'search'],
+        [/timer|countdown/i,       'clock'],
+        [/substitute|swap|replace/i, 'swap'],
+        [/scale|measure|weight|grams?\b/i, 'scale'],
+        [/voice|bixby|dictat|hands-?free/i, 'mic'],
+        [/more\b|^⋯|ellipsis|overflow menu/i, 'more-vertical']
       ];
       function _inferIcon(label) {
         for (const [re, ic] of ICON_KEYWORDS) if (re.test(label)) return ic;
         return null;
       }
+      const REGISTRY_BTN_KIND = {
+        'btn-contained': 'primary',
+        'btn-outlined': 'secondary',
+        'btn-flat': 'secondary',
+        'fab': 'primary',
+        'chip': 'secondary',
+        'button.dark': 'secondary',
+        'button.light': 'secondary',
+        'button.accent': 'primary',
+        'button.galaxy-ai': 'primary',
+        'button.header-small': 'secondary'
+      };
+      const cidBtn = child && child.componentId;
+      if (cidBtn && REGISTRY_BTN_KIND[cidBtn]) {
+        const lbl =
+          String(c.label || '').trim() ||
+          String(c.value || '').trim() ||
+          'Continue';
+        const ri =
+          _rasterActionIcon(c.icon) ||
+          _rasterActionIcon(c.iconUrl) ||
+          _rasterActionIcon(c.imageUrl);
+        comp.variant = {
+          actions: [{
+            label: lbl,
+            icon: ri || _inferIcon(lbl),
+            kind: REGISTRY_BTN_KIND[cidBtn]
+          }]
+        };
+        if (child && child.componentId === 'floating_action_bar' && comp.variant && !comp.variant.layout) {
+          comp.variant.layout = 'floating-pill';
+        }
+        break;
+      }
+      if (Array.isArray(c.actions) && c.actions.length) {
+        comp.variant = {
+          actions: c.actions.map((a, i) => {
+            const lbl = String(a.label || a.name || '').trim();
+            const ri =
+              _rasterActionIcon(a.icon) ||
+              _rasterActionIcon(a.iconUrl) ||
+              _rasterActionIcon(a.imageUrl);
+            return {
+              label: lbl,
+              icon: ri || (a.icon != null && String(a.icon).trim() ? a.icon : null) || _inferIcon(lbl),
+              kind: a.kind != null ? a.kind
+                : (i === 0 && !/cancel|dismiss|delete|remove/i.test(lbl) ? 'primary' : null)
+            };
+          }).filter(a => a.label)
+        };
+        if (child && child.componentId === 'floating_action_bar' && comp.variant && !comp.variant.layout) {
+          comp.variant.layout = 'floating-pill';
+        }
+        break;
+      }
+      let labelSrc = '';
+      const vRaw = String(c.value || '').trim();
+      const lRaw = String(c.label || '').trim();
+      const SEP = /\s*[,/|·•]\s*/;
+      const hasSep = (s) => SEP.test(s);
+      if (child && child.componentId === 'action_chip_row') {
+        if (hasSep(vRaw)) labelSrc = vRaw;
+        else if (hasSep(lRaw)) labelSrc = lRaw;
+        else labelSrc = lRaw || vRaw || '';
+      } else {
+        labelSrc = lRaw || vRaw || '';
+      }
+      const labels = labelSrc.split(SEP).map(s => s.trim()).filter(Boolean);
       comp.variant = {
         actions: labels.map((l, i) => ({
           label: l,
@@ -1228,6 +1637,9 @@ function _adaptForBodyAtomic(atomicRole, child, content, uiState) {
           kind: (i === 0 && !/cancel|dismiss|delete|remove/i.test(l)) ? 'primary' : (i === 0 ? 'secondary' : null)
         }))
       };
+      if (child && child.componentId === 'floating_action_bar' && comp.variant && !comp.variant.layout) {
+        comp.variant.layout = 'floating-pill';
+      }
       break;
     }
     case 'toggle-chip': {
@@ -1272,6 +1684,16 @@ function _adaptForBodyAtomic(atomicRole, child, content, uiState) {
           on:    true
         };
       }
+      break;
+    }
+    case 'focus-block-group': {
+      const chv = (child && typeof child.variant === 'object' && child.variant) ? child.variant : {};
+      const items = Array.isArray(c.items) ? c.items
+        : Array.isArray(c.themes) ? c.themes
+          : Array.isArray(chv.items) ? chv.items
+            : Array.isArray(chv.tiles) ? chv.tiles : undefined;
+      comp.variant = Object.assign({ layout: 'theme-summary-grid' }, chv);
+      if (items && items.length) comp.variant.items = items;
       break;
     }
     case 'notif-card':
@@ -1320,6 +1742,38 @@ function _adaptForBodyAtomic(atomicRole, child, content, uiState) {
       comp.variant = { temp: c.value || '', condition: c.label || '' };
       break;
     }
+    case 'dialog-site-header': {
+      const logoUrl =
+        c.logoUrl || c.iconUrl || c.faviconUrl || c.thumbnailUrl ||
+        c.imageUrl || c.heroUrl || '';
+      comp.variant = {
+        siteName: c.siteName || c.title || c.label || '',
+        url: c.url || c.siteDesc || c.value || '',
+        title: c.title,
+        siteDesc: c.siteDesc,
+        logoUrl
+      };
+      break;
+    }
+    case 'dialog-browser-bar': {
+      let shortcuts = Array.isArray(c.shortcuts) ? c.shortcuts : null;
+      if (!shortcuts && (c.label || c.value)) {
+        const merge = [c.label, c.value].filter(Boolean).join(' ');
+        const parts = merge.split(/\s*[,/|·•]\s*/).map(s => s.trim()).filter(Boolean);
+        if (parts.length) shortcuts = parts.map(label => ({ label }));
+      }
+      comp.variant = shortcuts && shortcuts.length ? { shortcuts } : {};
+      break;
+    }
+    case 'dialog-icon-grid': {
+      let apps = Array.isArray(c.apps) ? c.apps : Array.isArray(c.items) ? c.items : null;
+      if (!apps && (c.label || c.value)) {
+        const src = c.value || c.label || '';
+        apps = src.split(/\s*[,/|·•]\s*/).map(s => s.trim()).filter(Boolean).map(name => ({ name }));
+      }
+      comp.variant = apps && apps.length ? { apps } : {};
+      break;
+    }
     case 'shortcutLeft':
     case 'shortcutRight': {
       comp.variant = { icon: c.icon || 'phone' };
@@ -1350,6 +1804,8 @@ const APP_DOMAIN_PATTERNS = [
   // Ordered most-specific → most-generic so "cooking assistant" wins
   // before generic "cooking".
   [/cooking\s+assistant/i,                'Cooking Assistant'],
+  [/personalized\s+running\s+assistant|running\s+assistant/i, 'Running Assistant'],
+  [/personalized\s+flight\s+assistant|flight\s+assistant/i,   'Flight Assistant'],
   [/recipe(?:\s+book|\s+app)?/i,           'Recipes'],
   [/cooking|kitchen|chef/i,                'Cooking'],
   [/workout|fitness|exercise|training/i,   'Fitness'],
@@ -1439,13 +1895,28 @@ function _adaptForChromeAtomic(atomicRole, child, content, pageHint) {
     return '';
   }
   switch (atomicRole) {
-    case 'status-bar':
+    case 'status-bar': {
+      let batt = c.battery != null ? +c.battery : NaN;
+      if (!Number.isFinite(batt) && c.value != null) {
+        const vn = parseFloat(String(c.value).trim().replace(/%/g, ''));
+        if (Number.isFinite(vn) && vn >= 0 && vn <= 100) batt = vn;
+      }
+      if (!Number.isFinite(batt)) batt = 69;
+      const wf =
+        c.wifi != null ? +c.wifi
+        : c.wifiStrength != null ? +c.wifiStrength
+        : undefined;
+      const cell = c.cellular != null ? +c.cellular : undefined;
       comp.variant = {
-        theme:   'dark',
-        battery: 69,
-        carrier: c.label || 'K-Arts'
+        theme: c.theme || 'dark',
+        battery: batt,
+        carrier: c.carrier || c.label || 'K-Arts',
+        wifi: Number.isFinite(wf) ? wf : undefined,
+        cellular: Number.isFinite(cell) ? cell : undefined,
+        batteryState: c.batteryState || c.batteryIcon || undefined
       };
       break;
+    }
     case 'collapsed-app-bar':
     case 'selection-app-bar': {
       const title = _titleFallback();
@@ -1579,6 +2050,69 @@ function pipelineRenderChild(child, content, groupId, uiState, pageHint) {
   return wrapper;
 }
 
+/** Group glance cards that share a "today" style header next to each other. */
+function clusterTodayGlanceCardsFirst(children, resolveContent) {
+  if (!Array.isArray(children) || children.length < 2) return children;
+  var GLANCE_IDS = {
+    calendar_summary_card: true,
+    reminder_card: true,
+    message_summary_card: true,
+    weather_glance_card: true,
+    eta_card: true
+  };
+  var scored = children.map(function (ch, i) {
+    var c = resolveContent(ch) || {};
+    var text = String((c.label || '') + ' ' + (c.value || '')).toLowerCase();
+    var todayish = /\b(today|now|오늘)\b/i.test(text);
+    var id = ch.componentId || '';
+    var isGlance = !!GLANCE_IDS[id];
+    var bucket = (isGlance && todayish) ? 0 : isGlance ? 1 : 2;
+    return { ch: ch, i: i, bucket: bucket };
+  });
+  scored.sort(function (a, b) {
+    if (a.bucket !== b.bucket) return a.bucket - b.bucket;
+    return a.i - b.i;
+  });
+  return scored.map(function (s) { return s.ch; });
+}
+
+// Primary-task 2-column layouts: wider hero + narrower action rail (One UI recipe / step UIs).
+const _PIPELINE_HERO_ATOMIC = new Set(['focus-block', 'media-card', 'now-bar']);
+const _PIPELINE_ACTION_ATOMIC = new Set(['action-row', 'toggle-chip']);
+
+function _pipelineVisibleChildrenInOrder(children) {
+  return (children || []).filter(function (ch) {
+    return !ch.visibility || ch.visibility === 'visible';
+  });
+}
+
+function _pipelineHeroActionAsymPair(group, visibleOrdered, isAppShell) {
+  if (!isAppShell || !group || group.role !== 'primary-task' || visibleOrdered.length !== 2) return false;
+  const ch0 = visibleOrdered[0];
+  const ch1 = visibleOrdered[1];
+  const r0 = ch0.role || '';
+  const r1 = ch1.role || '';
+  if ((r0 === 'subject' && r1 === 'action') || (r0 === 'action' && r1 === 'subject')) return true;
+  const a0 = PIPELINE_BODY_ATOMIC_ROLE[ch0.componentId || ''];
+  const a1 = PIPELINE_BODY_ATOMIC_ROLE[ch1.componentId || ''];
+  return (
+    (_PIPELINE_HERO_ATOMIC.has(a0) && _PIPELINE_ACTION_ATOMIC.has(a1)) ||
+    (_PIPELINE_HERO_ATOMIC.has(a1) && _PIPELINE_ACTION_ATOMIC.has(a0))
+  );
+}
+
+function _pipelineChildIsSubjectColumn(ch, other) {
+  const r = ch.role || '';
+  if (r === 'subject') return true;
+  if (r === 'action') return false;
+  const ro = other.role || '';
+  if (ro === 'subject' && r !== 'action') return false;
+  if (ro === 'action' && r !== 'subject') return true;
+  const a = PIPELINE_BODY_ATOMIC_ROLE[ch.componentId || ''];
+  const ao = PIPELINE_BODY_ATOMIC_ROLE[other.componentId || ''];
+  return _PIPELINE_HERO_ATOMIC.has(a) && !_PIPELINE_HERO_ATOMIC.has(ao);
+}
+
 function renderPipelineResponse(resp) {
   const canvas = document.getElementById('canvas');
   const frame  = document.getElementById('canvasFrame');
@@ -1598,19 +2132,29 @@ function renderPipelineResponse(resp) {
   const _urgency = (resp.interpretation && resp.interpretation.context && resp.interpretation.context.urgency) || 'low';
   if (canvas) canvas.dataset.urgency = _urgency;
   if (frame)  frame.dataset.urgency  = _urgency;
+  if (canvas && uiState.baseSurface) canvas.dataset.baseSurface = uiState.baseSurface;
+
+  const effectiveBackgroundPolicy =
+    uiState.backgroundPolicy === 'dialog-surface' ||
+    (layoutPlan.backgroundPolicy === 'dialog-surface')
+      ? 'dialog-surface'
+      : uiState.backgroundPolicy;
+  const uiForBackground = Object.assign({}, uiState, {
+    backgroundPolicy: effectiveBackgroundPolicy
+  });
 
   // (1) Background from canonical uiState — Generator resolves 3-layer model
   //     (wallpaper / app-bg / focus-block) per One UI 4+ guidelines.
   if (window.UIState && uiState.backgroundPolicy) {
     const decision = {
-      showWallpaper: (uiState.backgroundPolicy === 'wallpaper' ||
-                      uiState.backgroundPolicy === 'scrim-over-wallpaper'),
-      backgroundPolicy: uiState.backgroundPolicy
+      showWallpaper: (effectiveBackgroundPolicy === 'wallpaper' ||
+                      effectiveBackgroundPolicy === 'scrim-over-wallpaper'),
+      backgroundPolicy: effectiveBackgroundPolicy
     };
-    window.UIState.applyDecisionToFrame(frame, decision, uiState);
+    window.UIState.applyDecisionToFrame(frame, decision, uiForBackground);
 
     const layers = window.Generator
-      ? window.Generator.resolveLayers(uiState, { theme: 'dark' })
+      ? window.Generator.resolveLayers(uiForBackground, { theme: 'dark' })
       : null;
     // Background routing matches the policy:
     //   wallpaper / scrim-over-wallpaper → user wallpaper image
@@ -1621,19 +2165,14 @@ function renderPipelineResponse(resp) {
     // still showing the home/lock wallpaper underneath. Now we honour
     // decision.showWallpaper, computed above from the policy.
     if (typeof setWallpaper === 'function') {
-      if (uiState.backgroundPolicy === 'dialog-surface') {
+      if (effectiveBackgroundPolicy === 'dialog-surface') {
         setWallpaper('dialog-surface', { system: true });
       } else if (decision.showWallpaper) {
         setWallpaper(userWallpaperChoice || 'wp-1', { system: true });
       } else {
-        // App / dialog / solid surface — clear the wallpaper image and
-        // paint the frame with a solid app-shell color. Keeps the device
-        // bezel + radius intact via the frame element; only the inner
-        // surface changes.
-        if (frame) {
-          frame.style.backgroundImage = 'none';
-          frame.style.backgroundColor = '#010102';  // app-shell dark, matches generator_memory.app.shellVariants.dark.background
-        }
+        // Keep user's wallpaper on generated app surfaces too. One UI depth
+        // comes from surface cards/scrims, not a forced black frame fill.
+        setWallpaper(userWallpaperChoice || 'wp-1', { system: true });
       }
     }
   }
@@ -1643,6 +2182,7 @@ function renderPipelineResponse(resp) {
   clearCanvas();
 
   if (layoutPlan.surfaceType && typeof window.generateSurfaceScenario === 'function') {
+    window.__lastPipelineRenderBundle = null;
     window.generateSurfaceScenario(layoutPlan.surfaceType);
     return;
   }
@@ -1669,9 +2209,107 @@ function renderPipelineResponse(resp) {
   canvas.style.display       = 'flex';
   canvas.style.flexDirection = 'column';
   canvas.style.alignItems    = 'stretch';
-  canvas.style.gap           = (layoutPlan.gap ?? 12) + 'px';
-  const pad = layoutPlan.padding || { top:16, right:16, bottom:16, left:16 };
-  canvas.style.padding = `${Math.max(pad.top, topReserve + 8)}px ${pad.right}px ${Math.max(pad.bottom, bottomReserve + 8)}px ${pad.left}px`;
+  const _isAppShell = uiState && uiState.baseSurface === 'app';
+  const _lpBp = layoutPlan && layoutPlan.backgroundPolicy;
+  const wantsPipelineBottomSheet =
+    _isAppShell &&
+    (uiState.backgroundPolicy === 'dialog-surface' ||
+     uiState.overlayType === 'system-dialog' ||
+     _lpBp === 'dialog-surface');
+  // One UI phone body: ~20–24dp horizontal inset; composer often emits 0–14px → clamp up on app.
+  // App vertical step: keep band-to-band / card-to-card rhythm at ~10px — larger composer
+  // gaps (e.g. 16–18) read as loose; clamp into 8–10 so GenUI stays dense like reference tiles.
+  const APP_GAP_FALLBACK = 10;
+  const APP_GAP_MIN = 8;
+  const APP_GAP_MAX = 10;
+  let appGapPx = APP_GAP_FALLBACK;
+  if (_isAppShell) {
+    const gTry = layoutPlan.gap != null ? +layoutPlan.gap : NaN;
+    if (Number.isFinite(gTry) && gTry >= APP_GAP_MIN && gTry <= APP_GAP_MAX) {
+      appGapPx = Math.round(gTry);
+    }
+  }
+  if (canvas && _isAppShell) {
+    canvas.style.setProperty('--app-stack-gap', appGapPx + 'px');
+  }
+  const _defaultGap = _isAppShell ? appGapPx : 10;
+  const _defaultPadH = _isAppShell ? 22 : 14;
+  const _minPadHApp = 20;
+  // Theme override pattern (CSS cascade only — no server-side override).
+  // The composer's choice becomes the FALLBACK; if the active theme
+  // defines --gap-screen / --screen-padding-v / --screen-padding-h, those
+  // win automatically because var() resolves to the theme value when set
+  // on :root. Theme silent → fallback (LLM choice). Designer wins.
+  const _composerGap = wantsPipelineBottomSheet
+    ? 0
+    : (_isAppShell ? appGapPx : (layoutPlan.gap != null ? layoutPlan.gap : _defaultGap));
+  canvas.style.gap = wantsPipelineBottomSheet
+    ? '0'
+    : `var(--gap-screen, ${_composerGap}px)`;
+  const pad = layoutPlan.padding || {};
+  const padT = pad.top != null ? +pad.top : 14;
+  const padB = pad.bottom != null ? +pad.bottom : 14;
+  const padL = pad.left != null ? +pad.left : _defaultPadH;
+  const padR = pad.right != null ? +pad.right : _defaultPadH;
+  var padH = Math.max(Number.isFinite(padL) ? padL : _defaultPadH, Number.isFinite(padR) ? padR : _defaultPadH);
+  if (_isAppShell) padH = Math.max(_minPadHApp, padH);
+  canvas.style.boxSizing = 'border-box';
+  // Theme override: --screen-padding-v / --screen-padding-h win when defined.
+  const _padTop    = Math.max(padT, topReserve + 4);
+  const _padBot    = Math.max(Number.isFinite(padB) ? padB : 14, bottomReserve + 4);
+  canvas.style.padding =
+    `var(--screen-padding-v, ${_padTop}px) ` +
+    `var(--screen-padding-h, ${padH}px) ` +
+    `var(--screen-padding-v, ${_padBot}px) ` +
+    `var(--screen-padding-h, ${padH}px)`;
+
+  // Fill the phone frame vertically: sparse composer output (e.g. 2 short
+  // cards) used to hug the top leaving ~70% empty black space. Stretch the
+  // canvas column to the device's usable viewport and grow primary-task
+  // groups + a flexible hero tile so layouts read "full-screen" rather than a
+  // tiny stamp in the corner.
+  const viewportH = layout && layout.viewport ? layout.viewport.height : (canvas.clientHeight || 978);
+  const usableContentH = Math.max(360, viewportH - topReserve - bottomReserve - 24);
+  canvas.style.minHeight = usableContentH + 'px';
+  canvas.dataset.pipelineFillViewport = '1';
+
+  if (canvas) {
+    if (wantsPipelineBottomSheet) {
+      canvas.dataset.pipelineBottomSheet = '1';
+      // One UI expanded Now Bar / system floating sheet: Figma Theme=Light Type=Floating
+      // by default; set uiState.floatingSheetTheme or layoutPlan.floatingSheetTheme to 'dark'
+      // for the charcoal shell (≈#1C1C1E).
+      var _fsTheme = (uiState && uiState.floatingSheetTheme) || (layoutPlan && layoutPlan.floatingSheetTheme);
+      canvas.dataset.floatingSheetTheme = (_fsTheme === 'dark') ? 'dark' : 'light';
+    } else {
+      delete canvas.dataset.pipelineBottomSheet;
+      delete canvas.dataset.floatingSheetTheme;
+    }
+  }
+  let sheetMount = canvas;
+  if (canvas && wantsPipelineBottomSheet) {
+    const spacer = document.createElement('div');
+    spacer.className = 'pipeline-bottom-sheet-spacer';
+    spacer.style.cssText = 'flex:1 1 auto;min-height:48px;width:100%;pointer-events:none;';
+    canvas.appendChild(spacer);
+    const host = document.createElement('div');
+    host.className = 'pipeline-bottom-sheet-host';
+    host.setAttribute('role', 'presentation');
+    const handle = document.createElement('div');
+    handle.className = 'pipeline-bottom-sheet-handle';
+    handle.setAttribute('aria-hidden', 'true');
+    host.appendChild(handle);
+    const inner = document.createElement('div');
+    inner.className = 'pipeline-bottom-sheet-inner';
+    host.appendChild(inner);
+    canvas.appendChild(host);
+    sheetMount = inner;
+  }
+
+  const nonChromeGroups = (layoutPlan.groups || []).filter(function (g) {
+    return g && g.role !== 'chrome';
+  });
+  var nContentGroups = Math.max(1, nonChromeGroups.length);
 
   // Content lookup. Plan components are keyed by SLOT (unique) first,
   // and by componentType (may collide) as a fallback. Originally this
@@ -1760,7 +2398,13 @@ function renderPipelineResponse(resp) {
     const isChrome = group.role === 'chrome';
     window.DesignDoc.addNode({
       id:    el.id,
-      role:  child.role || el.dataset.atomicRole || child.componentId,
+      role:
+        el.dataset.atomicRole ||
+        child.role ||
+        child.componentRole ||
+        child.componentId,
+      paletteId: child.componentId || null,
+      semanticConcept: null,
       type:  child.componentId,
       zone:  isChrome
         ? (el.dataset.atomicRole === 'gesture-bar' || el.dataset.atomicRole === 'nav-buttons' ? 'bottomNav' : 'topSystem')
@@ -1814,6 +2458,7 @@ function renderPipelineResponse(resp) {
   }
 
   let renderedIndex = 0;
+  var dockedNowBarElements = [];
   (layoutPlan.groups || []).forEach(group => {
     // CHROME GROUPS — render each child as absolute-positioned overlay into
     // the device frame's chrome zones instead of stacking in content flow.
@@ -1856,20 +2501,86 @@ function renderPipelineResponse(resp) {
     // tighter gap) so subject + state + action feel like one task unit
     // instead of three independent cards. supporting groups recede.
     groupEl.dataset.groupRole = group.role || '';
+    groupEl.dataset.pipelineContainer = group.container || 'vertical-stack';
     if (group.purpose) groupEl.dataset.purpose = group.purpose;
     groupEl.style.display = 'flex';
     groupEl.style.flexDirection = (group.container === 'horizontal-stack') ? 'row'
                                 : (group.container === 'grid')             ? 'row'
                                 : 'column';
+    // Row layouts: on app shell, stretch the cross-axis so a shorter itinerary /
+    // glance tile grows to match a taller action column (travel, recipe hero + chips).
+    // Lock/home and non-app surfaces keep top-align so dense widget grids stay compact.
+    if (group.container === 'horizontal-stack') {
+      groupEl.style.alignItems = _isAppShell ? 'stretch' : 'flex-start';
+    } else if (_isAppShell && group.container === 'grid') {
+      // All app grid bands (primary, meta, …): row cross-axis = tallest tile so
+      // short + medium pairs don’t leave a dead column beside a tall card.
+      groupEl.style.alignItems = 'stretch';
+    }
     if (group.container === 'grid') groupEl.style.flexWrap = 'wrap';
-    groupEl.style.gap = (group.gap ?? 8) + 'px';
+    // Theme override pattern: --gap-cards wins when defined; LLM's
+    // group.gap is the fallback. Designer toggles the slider in
+    // /customize and every group's between-card gap updates.
+    const _groupGap = _isAppShell ? appGapPx : (group.gap != null ? group.gap : _defaultGap);
+    groupEl.style.gap = `var(--gap-cards, ${_groupGap}px)`;
     groupEl.style.width = '100%';
+    if (group.role !== 'chrome') {
+      groupEl.style.boxSizing = 'border-box';
+      groupEl.style.flexShrink = '1';
+      // App shell: pack groups to intrinsic height so flexGrow doesn’t inflate
+      // empty vertical gutters between primary/supporting blocks (One UI rhythm).
+      if (_isAppShell) {
+        groupEl.style.flexGrow = '0';
+        groupEl.style.flexBasis = 'auto';
+        groupEl.style.flexShrink = '0';
+        groupEl.style.minHeight = '0';
+      } else if (group.role === 'primary-task') {
+        groupEl.style.flexGrow = nContentGroups > 1 ? '2' : '1';
+        groupEl.style.flexBasis = '0';
+        groupEl.style.minHeight =
+          nContentGroups === 1
+            ? '0'
+            : Math.max(120, Math.floor(usableContentH * 0.18)) + 'px';
+      } else if (group.role === 'supporting') {
+        groupEl.style.flexGrow = '1';
+        groupEl.style.flexBasis = '0';
+        groupEl.style.minHeight = '0';
+      } else if (group.role === 'tertiary' || group.role === 'meta') {
+        groupEl.style.flexGrow = '0';
+        groupEl.style.flexBasis = 'auto';
+      } else {
+        groupEl.style.flexGrow = '1';
+        groupEl.style.flexBasis = '0';
+      }
+    }
 
-    (group.children || []).forEach(child => {
+    let heroApplied = false;
+    var childrenToRender = group.children || [];
+    if (group.container !== 'horizontal-stack' && group.container !== 'grid') {
+      childrenToRender = clusterTodayGlanceCardsFirst(childrenToRender, _resolveChildContent);
+    }
+    const visibleOrdered = _pipelineVisibleChildrenInOrder(childrenToRender);
+    const visibleCountHS = visibleOrdered.length;
+    const asymHeroActionPair = _pipelineHeroActionAsymPair(group, visibleOrdered, _isAppShell);
+    const splitHorizPrimaryPair =
+      _isAppShell &&
+      group.role === 'primary-task' &&
+      group.container === 'horizontal-stack' &&
+      visibleCountHS === 2;
+    if (group.container === 'grid' && visibleOrdered.length === 4) {
+      groupEl.dataset.gridTileCount = '4';
+    }
+    childrenToRender.forEach(child => {
       if (child.visibility && child.visibility !== 'visible') return;
       const content = _resolveChildContent(child);
       const el = pipelineRenderChild(child, content, group.groupId, uiState, pageHint);
       el.style.animation = `fadeIn 300ms cubic-bezier(0.2,0,0,1) ${renderedIndex * 40}ms backwards`;
+      var dockBottom =
+        !!z &&
+        !_pipelineUiLockish(uiState) &&
+        el.dataset.atomicRole === 'now-bar' &&
+        _pipelineShouldDockNowBarChild(child);
+      if (!dockBottom) {
       // Width policy by container:
       //   grid              → flex 1 1 50% (2-column)
       //   horizontal-stack  → content-sized (chips/buttons in a row)
@@ -1885,15 +2596,112 @@ function renderPipelineResponse(resp) {
         // the row minus the gap.
         var cols = (group.gridColumns && +group.gridColumns >= 2) ? +group.gridColumns : 2;
         var pct = 100 / cols;
-        el.style.flex = '1 1 calc(' + pct + '% - 8px)';
+        var gg = _isAppShell ? appGapPx : (group.gap != null ? +group.gap : 10);
+        var gutter = cols > 1 ? (gg * (cols - 1)) / cols : 0;
+        if (asymHeroActionPair && cols === 2 && visibleOrdered.length === 2) {
+          var otherG = visibleOrdered[0] === child ? visibleOrdered[1] : (visibleOrdered[1] === child ? visibleOrdered[0] : null);
+          if (otherG) {
+            var pctCol = _pipelineChildIsSubjectColumn(child, otherG) ? 58 : 42;
+            el.style.flex = '0 1 calc(' + pctCol + '% - ' + gutter + 'px)';
+          } else {
+            el.style.flex = '0 1 calc(' + pct + '% - ' + gutter + 'px)';
+          }
+        } else {
+          // flex-grow: 0 keeps preset tiles at intrinsic height/width ratio —
+          // only shrink-wrap columns within calc(...) basis (no vertical stretching glue).
+          el.style.flex = '0 1 calc(' + pct + '% - ' + gutter + 'px)';
+        }
+        el.style.minWidth = '0';
+        el.style.maxWidth = '100%';
+        el.style.boxSizing = 'border-box';
+      } else if (splitHorizPrimaryPair) {
+        var ggH = appGapPx;
+        var gutterH = ggH / 2;
+        if (asymHeroActionPair) {
+          var otherH = visibleOrdered[0] === child ? visibleOrdered[1] : (visibleOrdered[1] === child ? visibleOrdered[0] : null);
+          if (otherH) {
+            var pctH = _pipelineChildIsSubjectColumn(child, otherH) ? 58 : 42;
+            el.style.flex = '0 1 calc(' + pctH + '% - ' + gutterH + 'px)';
+          } else {
+            el.style.flex = '0 1 calc(50% - ' + gutterH + 'px)';
+          }
+        } else {
+          el.style.flex = '0 1 calc(50% - ' + gutterH + 'px)';
+        }
+        el.style.minWidth = '0';
+        el.style.maxWidth = '100%';
       } else if (group.container !== 'horizontal-stack') {
         el.style.width = '100%';
         el.style.alignSelf = 'stretch';
       }
+      if (
+        group.role === 'primary-task' &&
+        group.container !== 'horizontal-stack' &&
+        group.container !== 'grid' &&
+        !heroApplied
+      ) {
+        const visOk = !(child.visibility === 'collapsed' || child.visibility === 'hidden');
+        const ar =
+          PIPELINE_BODY_ATOMIC_ROLE[child.componentId] ||
+          el.dataset.atomicRole ||
+          '';
+        const prRaw = child.priority != null ? +child.priority : 2;
+        const isCompactAtomic =
+          ar === 'now-bar' ||
+          child.componentId === 'media_control_bar' ||
+          ar === 'action-row' ||
+          ar === 'toggle-chip' ||
+          child.componentType === 'action_chip_row' ||
+          child.componentType === 'quick_toggle_row';
+        const wantHero =
+          visOk &&
+          !isCompactAtomic &&
+          (
+            prRaw <= 1 ||
+            child.role === 'subject' ||
+            (ar === 'media-card' && prRaw <= 2)
+          );
+        if (wantHero) {
+          // Do NOT flex-grow: filling all free space shoves siblings to ~0 height
+          // and focus-block inner `height:100%` + min-height:0 can paint over the
+          // next card. Extra vertical room is handled by .canvas-group-flex-spacer.
+          el.style.flex = '0 1 auto';
+          el.style.flexGrow = '0';
+          el.style.minHeight = '0';
+          heroApplied = true;
+        }
+      }
       groupEl.appendChild(el);
+      } else {
+        el.style.width = '100%';
+        el.style.maxWidth = '100%';
+        el.style.boxSizing = 'border-box';
+        el.dataset.pipelineDock = 'bottom-now-bar';
+        dockedNowBarElements.push(el);
+      }
       renderedIndex++;
       _registerNodeWithDesignDoc(child, el, group);
     });
+
+    if (
+      group.role === 'primary-task' &&
+      group.container !== 'horizontal-stack' &&
+      group.container !== 'grid' &&
+      !heroApplied
+    ) {
+      var heroCand = groupEl.querySelector(
+        '.canvas-item.body-atomic[data-atomic-role="focus-block"], .canvas-item.body-atomic[data-atomic-role="media-card"]'
+      );
+      if (heroCand) {
+        heroCand.dataset.priority = '1';
+        heroCand.style.flex = '0 1 auto';
+        heroCand.style.flexGrow = '0';
+        heroCand.style.minHeight = '0';
+      }
+    }
+
+    // Omit bottom flex-spacer — it amplified height fights with QS-style
+    // toggle rows (`height:auto` fixes) under dense pipelines.
 
     // One UI guideline: bottom navigation must always anchor to screen bottom
     if (groupEl.querySelector('.oui-bottomnav')) {
@@ -1901,8 +2709,56 @@ function renderPipelineResponse(resp) {
       groupEl.style.flexShrink = '0';
     }
 
-    if (groupEl.children.length > 0) canvas.appendChild(groupEl);
+    if (groupEl.children.length > 0) sheetMount.appendChild(groupEl);
   });
+
+  if (dockedNowBarElements.length && z && canvas) {
+    var rDock = _pipelineRectBottomSessionNowBar(z);
+    if (rDock) {
+      /* Session strip sits at rDock.y inside bottomNav. Padding was only
+         bottomNav.h — less than (viewport − rDock.y), so primary-task cards
+         could extend into the strip band and overlap the docked pill. */
+      if (layout && layout.viewport && Number.isFinite(layout.viewport.height)) {
+        var Hvp = layout.viewport.height;
+        var gapAboveStrip = 16;
+        var neededBottomPad = Hvp - rDock.y + gapAboveStrip;
+        var basePadB2 = Math.max(Number.isFinite(padB) ? padB : 14, bottomReserve + 4);
+        var newPadB = Math.max(basePadB2, neededBottomPad);
+        canvas.style.padding =
+          Math.max(padT, topReserve + 4) + 'px ' +
+          padH + 'px ' +
+          newPadB + 'px ' +
+          padH + 'px';
+      }
+      dockedNowBarElements.forEach(function dockMount(el, idx) {
+        var yStack = rDock.y - idx * 68;
+        if (yStack < z.bottomNav.y) yStack = z.bottomNav.y + 2;
+        el.style.position = 'absolute';
+        /* Center the bottom rail in #canvas — rDock.x assumes raw frame safe
+           insets; composer padding/zoom can desync so the pill hugged the left. */
+        el.style.left = '50%';
+        el.style.right = 'auto';
+        el.style.setProperty('transform', 'translateX(-50%)', 'important');
+        el.style.top = yStack + 'px';
+        /* now-bar atomic uses width:auto!important in genui.css — without !important
+           the wrapper shrinks to the 248px pill and sits flush-low in the rail. */
+        el.style.setProperty('width', rDock.w + 'px', 'important');
+        el.style.setProperty('max-width', '100%', 'important');
+        el.style.setProperty('min-width', '0', 'important');
+        el.style.minHeight = /* media/timer pill can be 68px tall */ Math.min(rDock.h, 72) + 'px';
+        el.style.height = 'auto';
+        el.style.display = 'flex';
+        el.style.flexDirection = 'row';
+        el.style.justifyContent = 'center';
+        el.style.alignItems = 'center';
+        el.style.boxSizing = 'border-box';
+        el.style.pointerEvents = 'auto';
+        el.style.zIndex = String(520 + idx);
+        el.style.flexShrink = '0';
+        canvas.appendChild(el);
+      });
+    }
+  }
 
   // Refresh the Scene/Layers panel now that all nodes are registered.
   // (refreshSceneInspector reads DesignDoc.state.nodes preferentially, so
@@ -1944,6 +2800,8 @@ function renderPipelineResponse(resp) {
     if (!r.summary)        _renderPipelineSummaryBlock(explanation, validation);
     if (!anyPanelRendered) output.scrollTop = 0;
   }
+
+  window.__lastPipelineRenderBundle = resp;
 }
 
 // ---------------------------------------------------------------------------
@@ -2017,8 +2875,8 @@ function _pipelineJsonBlock(title, obj, meta) {
   }
   var metaHtml = meta ? ' <span style="color:var(--text-3);font-weight:400;">' + _escapeHtml(meta) + '</span>' : '';
   return '<details style="margin:4px 0;padding:4px 0;border-top:1px solid rgba(255,255,255,0.05);">' +
-    '<summary style="cursor:pointer;color:#fff;font-weight:600;font-size:11px;">' + _escapeHtml(title) + metaHtml + '</summary>' +
-    '<pre style="margin:6px 0 0 0;padding:8px;background:rgba(0,0,0,0.35);border-radius:6px;font-size:10px;line-height:1.45;color:#cbd5e1;overflow:auto;max-height:260px;white-space:pre-wrap;word-break:break-word;">' +
+    '<summary style="cursor:pointer;color:#fff;font-weight:600;font-size:13px;">' + _escapeHtml(title) + metaHtml + '</summary>' +
+    '<pre style="margin:6px 0 0 0;padding:8px;background:rgba(0,0,0,0.35);border-radius:6px;font-size:13px;line-height:1.45;color:#cbd5e1;overflow:auto;max-height:260px;white-space:pre-wrap;word-break:break-word;">' +
       _escapeHtml(json) + truncated +
     '</pre>' +
   '</details>';
@@ -2051,7 +2909,7 @@ function _purposeChip(key, prefix) {
   if (!m) return _escapeHtml(key || '');
   return '<span style="display:inline-block;padding:2px 8px;border-radius:10px;' +
     'background:' + m.bg + ';color:' + m.color + ';border:1px solid ' + m.border + ';' +
-    'font-size:10px;font-weight:600;letter-spacing:0.2px;">' +
+    'font-size:13px;font-weight:600;letter-spacing:0.2px;">' +
     m.icon + ' ' + (prefix || '') + m.label + ' <span style="opacity:0.6;">(' + m.en + ')</span>' +
     '</span>';
 }
@@ -2059,7 +2917,7 @@ function _purposeChip(key, prefix) {
 function _fieldRow(label, value, dim) {
   if (value === undefined || value === null || value === '') return '';
   var v = Array.isArray(value) ? value.join(', ') : String(value);
-  return '<div style="display:flex;gap:8px;padding:1px 0;font-size:10px;">' +
+  return '<div style="display:flex;gap:8px;padding:1px 0;font-size:13px;">' +
     '<span style="color:var(--text-3);min-width:110px;">' + _escapeHtml(label) + '</span>' +
     '<span style="color:' + (dim ? 'var(--text-2)' : '#fff') + ';">' + _escapeHtml(v) + '</span>' +
     '</div>';
@@ -2078,22 +2936,22 @@ function _renderClassificationBlock(payload) {
   var summary = '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:3px 0;">' +
     _purposeChip(pri) +
     (sec ? _purposeChip(sec, '+ ') : '') +
-    '<span style="font-size:10px;color:var(--text-3);">\u00b7</span>' +
-    '<span style="font-size:10px;color:var(--text-2);">attn:<b style="color:#fff;margin-left:2px;">' + _escapeHtml(modA.attention || '?') + '</b></span>' +
-    '<span style="font-size:10px;color:var(--text-2);">interaction:<b style="color:#fff;margin-left:2px;">' + _escapeHtml(modA.interaction || '?') + '</b></span>' +
-    '<span style="font-size:10px;color:var(--text-2);">devices:<b style="color:#fff;margin-left:2px;">' + _escapeHtml(modB.device_count || 'single') + '</b></span>' +
+    '<span style="font-size:13px;color:var(--text-3);">\u00b7</span>' +
+    '<span style="font-size:13px;color:var(--text-2);">attn:<b style="color:#fff;margin-left:2px;">' + _escapeHtml(modA.attention || '?') + '</b></span>' +
+    '<span style="font-size:13px;color:var(--text-2);">interaction:<b style="color:#fff;margin-left:2px;">' + _escapeHtml(modA.interaction || '?') + '</b></span>' +
+    '<span style="font-size:13px;color:var(--text-2);">devices:<b style="color:#fff;margin-left:2px;">' + _escapeHtml(modB.device_count || 'single') + '</b></span>' +
     ((gov.triggers && gov.triggers.length)
-      ? '<span style="font-size:10px;padding:1px 6px;border-radius:8px;background:rgba(251,191,36,0.15);color:#fbbf24;border:1px solid rgba(251,191,36,0.35);">\u26A0 governance</span>'
+      ? '<span style="font-size:13px;padding:1px 6px;border-radius:8px;background:rgba(251,191,36,0.15);color:#fbbf24;border:1px solid rgba(251,191,36,0.35);">\u26A0 governance</span>'
       : '') +
     '</div>';
 
   var details = '';
   if (orch.purpose && orch.purpose.reasoning) {
-    details += '<div style="font-size:10px;color:var(--text-2);font-style:italic;padding:2px 0 6px 0;">' +
+    details += '<div style="font-size:13px;color:var(--text-2);font-style:italic;padding:2px 0 6px 0;">' +
       '\u201C' + _escapeHtml(orch.purpose.reasoning) + '\u201D</div>';
   }
   details += '<div style="padding:4px 0;">' +
-    '<div style="font-size:10px;color:var(--text-3);font-weight:600;margin-bottom:2px;">Modulation A \u00B7 body / environment</div>' +
+    '<div style="font-size:13px;color:var(--text-3);font-weight:600;margin-bottom:2px;">Modulation A \u00B7 body / environment</div>' +
     _fieldRow('attention',   modA.attention) +
     _fieldRow('mobility',    modA.mobility) +
     _fieldRow('hands',       modA.hands) +
@@ -2103,7 +2961,7 @@ function _renderClassificationBlock(payload) {
     _fieldRow('ambient',     modA.ambient) +
     '</div>';
   details += '<div style="padding:4px 0;">' +
-    '<div style="font-size:10px;color:var(--text-3);font-weight:600;margin-bottom:2px;">Modulation B \u00B7 multi-device</div>' +
+    '<div style="font-size:13px;color:var(--text-3);font-weight:600;margin-bottom:2px;">Modulation B \u00B7 multi-device</div>' +
     _fieldRow('device count',   modB.device_count) +
     _fieldRow('primary device', modB.primary_device) +
     _fieldRow('secondary',      (modB.secondary_devices && modB.secondary_devices.length) ? modB.secondary_devices : null) +
@@ -2111,7 +2969,7 @@ function _renderClassificationBlock(payload) {
     _fieldRow('allocation',     modB.surface_allocation_hint) +
     '</div>';
   details += '<div style="padding:4px 0;">' +
-    '<div style="font-size:10px;color:var(--text-3);font-weight:600;margin-bottom:2px;">Governance</div>' +
+    '<div style="font-size:13px;color:var(--text-3);font-weight:600;margin-bottom:2px;">Governance</div>' +
     _fieldRow('triggers',            (gov.triggers && gov.triggers.length) ? gov.triggers : 'none', !(gov.triggers && gov.triggers.length)) +
     _fieldRow('autonomy',            gov.autonomy_level) +
     _fieldRow('explanation needed',  gov.explanation_needed ? 'yes' : 'no', !gov.explanation_needed) +
@@ -2123,11 +2981,11 @@ function _renderClassificationBlock(payload) {
     '<div style="margin:6px 0;padding:8px 10px;border:1px solid rgba(255,255,255,0.08);' +
       'border-radius:8px;background:rgba(0,0,0,0.25);">' +
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">' +
-        '<span style="font-size:10px;color:var(--text-3);letter-spacing:0.4px;font-weight:600;">4+2+1 CLASSIFICATION</span>' +
+        '<span style="font-size:13px;color:var(--text-3);letter-spacing:0.4px;font-weight:600;">4+2+1 CLASSIFICATION</span>' +
       '</div>' +
       summary +
       '<details style="margin-top:6px;">' +
-        '<summary style="cursor:pointer;font-size:10px;color:var(--text-3);padding:2px 0;">details</summary>' +
+        '<summary style="cursor:pointer;font-size:13px;color:var(--text-3);padding:2px 0;">details</summary>' +
         details +
       '</details>' +
     '</div>';
@@ -2154,7 +3012,7 @@ function _pipelineCard(title, bodyHtml) {
   return '<div style="margin:6px 0;padding:8px 10px;border:1px solid rgba(255,255,255,0.08);' +
            'border-radius:8px;background:rgba(255,255,255,0.02);">' +
            '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">' +
-             '<span style="font-size:10px;color:var(--text-3);letter-spacing:0.4px;font-weight:600;">' +
+             '<span style="font-size:13px;color:var(--text-3);letter-spacing:0.4px;font-weight:600;">' +
                title +
              '</span>' +
            '</div>' +
@@ -2166,7 +3024,7 @@ function _pipelineRow(key, val, opts) {
   if (val == null || val === '') return '';
   var keyColor = (opts && opts.keyColor) || 'var(--text-3)';
   var valColor = (opts && opts.valColor) || '#fff';
-  return '<div style="display:flex;gap:8px;padding:2px 0;font-size:10px;line-height:1.4;">' +
+  return '<div style="display:flex;gap:8px;padding:2px 0;font-size:13px;line-height:1.4;">' +
            '<span style="color:' + keyColor + ';min-width:130px;flex-shrink:0;">' + _escapeHtml(String(key)) + '</span>' +
            '<span style="color:' + valColor + ';">' + _escapeHtml(String(val)) + '</span>' +
          '</div>';
@@ -2399,7 +3257,7 @@ function _renderPipelineClassificationBlock(interpretation, planningPacket, scen
   const sec = keys[1] ? PIPELINE_PATTERNS[keys[1]] : null;
 
   function _pchip(p, prefix) {
-    return '<span style="display:inline-flex;gap:5px;align-items:baseline;font-size:11px;">' +
+    return '<span style="display:inline-flex;gap:5px;align-items:baseline;font-size:13px;">' +
       (prefix ? '<span style="color:var(--text-3);font-weight:500;">' + prefix + '</span>' : '') +
       '<span style="color:' + p.color + ';font-weight:700;">' + p.icon + ' ' + p.labelKo + '</span>' +
       '<span style="color:var(--text-3);">(' + p.labelEn + ')</span>' +
@@ -2409,21 +3267,21 @@ function _renderPipelineClassificationBlock(interpretation, planningPacket, scen
   const summary = '<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:4px 0;">' +
     _pchip(pri, '→ ') +
     (sec ? _pchip(sec, '+ ') : '') +
-    '<span style="font-size:10px;color:var(--text-3);margin:0 2px;">·</span>' +
-    '<span style="font-size:10px;color:var(--text-2);">attn:<b style="color:#fff;margin-left:2px;">' + _escapeHtml(us.attentionMode || '?') + '</b></span>' +
-    '<span style="font-size:10px;color:var(--text-2);">interaction:<b style="color:#fff;margin-left:2px;">' + _escapeHtml(us.interactionMode || ctx.interactionMode || '?') + '</b></span>' +
-    '<span style="font-size:10px;color:var(--text-2);">devices:<b style="color:#fff;margin-left:2px;">' + _escapeHtml(us.windowMode === 'split' ? 'multi' : 'single') + '</b></span>' +
+    '<span style="font-size:13px;color:var(--text-3);margin:0 2px;">·</span>' +
+    '<span style="font-size:13px;color:var(--text-2);">attn:<b style="color:#fff;margin-left:2px;">' + _escapeHtml(us.attentionMode || '?') + '</b></span>' +
+    '<span style="font-size:13px;color:var(--text-2);">interaction:<b style="color:#fff;margin-left:2px;">' + _escapeHtml(us.interactionMode || ctx.interactionMode || '?') + '</b></span>' +
+    '<span style="font-size:13px;color:var(--text-2);">devices:<b style="color:#fff;margin-left:2px;">' + _escapeHtml(us.windowMode === 'split' ? 'multi' : 'single') + '</b></span>' +
   '</div>';
 
   let details = '';
-  details += '<div style="padding:4px 0;font-size:10px;color:var(--text-2);font-style:italic;">' +
+  details += '<div style="padding:4px 0;font-size:13px;color:var(--text-2);font-style:italic;">' +
     '“' + _escapeHtml(pri.labelKo + (sec ? ' + ' + sec.labelKo : '')) + '” classification derived from ' +
     'scenario keywords + uiState (' + (us.attentionMode || '?') + ' / ' + (us.densityMode || '?') + ' / ' + (us.interactionMode || '?') + ') + ' +
     'task types + contextTags. Path A has no explicit classifier yet — this is a heuristic.' +
   '</div>';
   details += '<div style="padding:4px 0;">' +
-    '<div style="font-size:10px;color:var(--text-3);font-weight:600;margin-bottom:2px;">layout pattern (Path B equivalent)</div>' +
-    '<div style="font-size:10px;color:#fff;">' + pri.layout + (sec ? ' + ' + sec.layout : '') + '</div>' +
+    '<div style="font-size:13px;color:var(--text-3);font-weight:600;margin-bottom:2px;">layout pattern (Path B equivalent)</div>' +
+    '<div style="font-size:13px;color:#fff;">' + pri.layout + (sec ? ' + ' + sec.layout : '') + '</div>' +
   '</div>';
 
   const wrap = document.createElement('div');
@@ -2431,11 +3289,11 @@ function _renderPipelineClassificationBlock(interpretation, planningPacket, scen
     '<div style="margin:6px 0;padding:8px 10px;border:1px solid rgba(255,255,255,0.08);' +
       'border-radius:8px;background:rgba(0,0,0,0.25);">' +
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">' +
-        '<span style="font-size:10px;color:var(--text-3);letter-spacing:0.4px;font-weight:600;">4+2+1 CLASSIFICATION</span>' +
+        '<span style="font-size:13px;color:var(--text-3);letter-spacing:0.4px;font-weight:600;">4+2+1 CLASSIFICATION</span>' +
       '</div>' +
       summary +
       '<details style="margin-top:6px;">' +
-        '<summary style="cursor:pointer;font-size:10px;color:var(--text-3);padding:2px 0;">details</summary>' +
+        '<summary style="cursor:pointer;font-size:13px;color:var(--text-3);padding:2px 0;">details</summary>' +
         details +
       '</details>' +
     '</div>';
@@ -2517,7 +3375,7 @@ function _renderPipelinePriorityBlock(plan, layoutPlan) {
 
   function _chipsFor(col) {
     if (!col.items.length) {
-      return '<div style="color:var(--text-3);font-style:italic;font-size:10px;padding:6px 0;">—</div>';
+      return '<div style="color:var(--text-3);font-style:italic;font-size:13px;padding:6px 0;">—</div>';
     }
     return col.items.map(function (item) {
       var primary   = item.primary || '';
@@ -2528,14 +3386,14 @@ function _renderPipelinePriorityBlock(plan, layoutPlan) {
         'background:' + col.bg + ';' +
         'border-radius:6px;' +
         'color:' + col.text + ';' +
-        'font-size:10px;' +
+        'font-size:13px;' +
         'line-height:1.3;' +
         'word-break:break-word;' +
         'white-space:normal;' +
       '">' +
         '<div style="font-weight:500;">' + _escapeHtml(primary) + '</div>' +
         (secondary
-          ? '<div style="font-size:9px;opacity:0.7;margin-top:2px;font-weight:400;">' + _escapeHtml(secondary) + '</div>'
+          ? '<div style="font-size:13px;opacity:0.7;margin-top:2px;font-weight:400;">' + _escapeHtml(secondary) + '</div>'
           : '') +
       '</div>';
     }).join('');
@@ -2543,7 +3401,7 @@ function _renderPipelinePriorityBlock(plan, layoutPlan) {
 
   function _columnFor(col) {
     return '<div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:6px;">' +
-      '<div style="font-size:10px;font-weight:700;color:' + col.text + ';letter-spacing:0.3px;">' +
+      '<div style="font-size:13px;font-weight:700;color:' + col.text + ';letter-spacing:0.3px;">' +
         col.icon + ' ' + col.label + ' (' + col.items.length + ')' +
       '</div>' +
       _chipsFor(col) +
@@ -2557,7 +3415,7 @@ function _renderPipelinePriorityBlock(plan, layoutPlan) {
   var trailing = '';
   var reasoning = notes.selectionReasoning || [];
   if (reasoning.length) {
-    trailing += '<div style="margin-top:8px;padding-top:6px;border-top:1px dashed rgba(255,255,255,0.08);font-size:10px;color:var(--text-2);line-height:1.5;">' +
+    trailing += '<div style="margin-top:8px;padding-top:6px;border-top:1px dashed rgba(255,255,255,0.08);font-size:13px;color:var(--text-2);line-height:1.5;">' +
       reasoning.map(function (r) { return '• ' + _escapeHtml(r); }).join('<br>') +
     '</div>';
   }
@@ -2603,14 +3461,14 @@ function _renderPipelineComponentResolutionBlock(plan, layoutPlan) {
       note = ch.variant ? 'variant=' + ch.variant : '';
       direct++;
     }
-    rows += '<div style="display:grid;grid-template-columns:1.2fr auto 1fr;gap:8px;padding:3px 0;align-items:center;font-size:10px;line-height:1.4;">' +
+    rows += '<div style="display:grid;grid-template-columns:1.2fr auto 1fr;gap:8px;padding:3px 0;align-items:center;font-size:13px;line-height:1.4;">' +
       '<span style="color:#A78BFA;font-weight:500;">' + _escapeHtml(ch.componentId) + '</span>' +
       '<span style="color:var(--text-3);">→</span>' +
       '<span style="color:#fff;font-family:ui-monospace,monospace;">' + _escapeHtml(resolved) + '</span>' +
-      (note ? '<div style="grid-column:1 / -1;color:var(--text-3);font-style:italic;font-size:9px;padding-left:2px;">' + _escapeHtml(note) + '</div>' : '') +
+      (note ? '<div style="grid-column:1 / -1;color:var(--text-3);font-style:italic;font-size:13px;padding-left:2px;">' + _escapeHtml(note) + '</div>' : '') +
     '</div>';
   });
-  var header = '<div style="font-size:10px;color:var(--text-2);margin-bottom:4px;">' +
+  var header = '<div style="font-size:13px;color:var(--text-2);margin-bottom:4px;">' +
     bridged + ' bridged / ' + direct + ' direct' +
     '</div>';
 
@@ -2655,7 +3513,7 @@ function _renderPipelineLayoutBlock(layoutPlan) {
       var roleTag = c.role ? '<span style="color:#A5B4FC;">[' + _escapeHtml(c.role) + ']</span> ' : '';
       return roleTag + _escapeHtml(c.componentId || '?') + v;
     });
-    rows += '<div style="padding:3px 0;font-size:10px;line-height:1.5;">' +
+    rows += '<div style="padding:3px 0;font-size:13px;line-height:1.5;">' +
               '<span style="color:' + groupColor + ';font-weight:600;">[group ' + gi + ' · ' + (g.role || '?') + ']</span> ' +
               (g.purpose ? '<span style="color:var(--text-3);font-style:italic;">' + _escapeHtml(g.purpose) + '</span>' : '') +
               '<div style="margin-left:14px;color:#fff;">' + childLines.join('<br>') + '</div>' +
@@ -2702,7 +3560,7 @@ function _renderPipelineSummaryBlock(explanation, validation) {
       { valColor: (s.high > 0 ? '#FCA5A5' : (s.total > 0 ? '#FDE68A' : '#86EFAC')) });
     v.forEach(function (vio) {
       var sevColor = vio.severity === 'high' ? '#FCA5A5' : vio.severity === 'medium' ? '#FDE68A' : '#94a3b8';
-      rowsV += '<div style="padding:2px 0;font-size:10px;line-height:1.4;">' +
+      rowsV += '<div style="padding:2px 0;font-size:13px;line-height:1.4;">' +
                  '<span style="color:' + sevColor + ';font-weight:600;">[' + vio.severity + '] ' + _escapeHtml(vio.ruleId) + '</span> ' +
                  '<span style="color:#fff;">' + _escapeHtml(vio.message || '') + '</span>' +
               '</div>';
@@ -2734,7 +3592,7 @@ function _renderInterpretationBlock(payload) {
   ];
   rows.forEach(function (r) {
     if (!r[1]) return;
-    qaRows += '<div style="display:flex;gap:8px;padding:2px 0;font-size:10px;line-height:1.4;">' +
+    qaRows += '<div style="display:flex;gap:8px;padding:2px 0;font-size:13px;line-height:1.4;">' +
       '<span style="color:var(--text-3);min-width:130px;flex-shrink:0;">' + _escapeHtml(r[0]) + '</span>' +
       '<span style="color:#fff;">' + _escapeHtml(r[1]) + '</span>' +
       '</div>';
@@ -2745,7 +3603,7 @@ function _renderInterpretationBlock(payload) {
     '<div style="margin:6px 0;padding:8px 10px;border:1px solid rgba(255,255,255,0.08);' +
       'border-radius:8px;background:rgba(255,255,255,0.02);">' +
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">' +
-        '<span style="font-size:10px;color:var(--text-3);letter-spacing:0.4px;font-weight:600;">' +
+        '<span style="font-size:13px;color:var(--text-3);letter-spacing:0.4px;font-weight:600;">' +
           '\uD83D\uDD0D INTERPRETATION' +
         '</span>' +
       '</div>' +
@@ -2778,7 +3636,7 @@ function _renderStatePacketBlock(payload) {
   var rowsHtml = '';
   fields.forEach(function (f) {
     if (!f[1]) return;
-    rowsHtml += '<div style="display:flex;gap:8px;padding:1px 0;font-size:10px;font-family:ui-monospace,monospace;">' +
+    rowsHtml += '<div style="display:flex;gap:8px;padding:1px 0;font-size:13px;font-family:ui-monospace,monospace;">' +
       '<span style="color:var(--text-3);min-width:150px;">' + _escapeHtml(f[0]) + '</span>' +
       '<span style="color:#fff;">' + _escapeHtml(f[1]) + '</span>' +
       '</div>';
@@ -2790,7 +3648,7 @@ function _renderStatePacketBlock(payload) {
   var flagsHtml = flags.length
     ? '<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px;">' +
         flags.map(function (f) {
-          return '<span style="font-size:9px;padding:1px 6px;border-radius:8px;' +
+          return '<span style="font-size:13px;padding:1px 6px;border-radius:8px;' +
             'background:rgba(251,191,36,0.15);color:#fbbf24;border:1px solid rgba(251,191,36,0.35);">' +
             _escapeHtml(f) + '</span>';
         }).join('') +
@@ -2802,7 +3660,7 @@ function _renderStatePacketBlock(payload) {
     '<div style="margin:6px 0;padding:8px 10px;border:1px solid rgba(255,255,255,0.08);' +
       'border-radius:8px;background:rgba(255,255,255,0.02);">' +
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">' +
-        '<span style="font-size:10px;color:var(--text-3);letter-spacing:0.4px;font-weight:600;">' +
+        '<span style="font-size:13px;color:var(--text-3);letter-spacing:0.4px;font-weight:600;">' +
           '\uD83D\uDCE6 STATE PACKET' +
         '</span>' +
       '</div>' +
@@ -2826,11 +3684,11 @@ function _renderPriorityBlock(payload) {
       ? items.map(function (c) {
           return '<div style="padding:2px 6px;margin:1px 0;border-radius:5px;' +
             'background:' + bg + ';color:' + color + ';border:1px solid ' + border + ';' +
-            'font-size:10px;line-height:1.3;word-break:break-word;">' + _escapeHtml(c) + '</div>';
+            'font-size:13px;line-height:1.3;word-break:break-word;">' + _escapeHtml(c) + '</div>';
         }).join('')
-      : '<div style="padding:2px 0;color:var(--text-3);font-size:10px;font-style:italic;">\u2014</div>';
+      : '<div style="padding:2px 0;color:var(--text-3);font-size:13px;font-style:italic;">\u2014</div>';
     return '<div style="flex:1;min-width:0;">' +
-      '<div style="font-size:9px;color:' + color + ';letter-spacing:0.4px;font-weight:700;margin-bottom:3px;">' +
+      '<div style="font-size:13px;color:' + color + ';letter-spacing:0.4px;font-weight:700;margin-bottom:3px;">' +
         emoji + ' ' + title + ' <span style="color:var(--text-3);font-weight:400;">(' + (items ? items.length : 0) + ')</span>' +
       '</div>' +
       chips +
@@ -2845,7 +3703,7 @@ function _renderPriorityBlock(payload) {
 
   var reasoning = '';
   if (ip.why_must || ip.why_suppress) {
-    reasoning = '<div style="margin-top:8px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.05);font-size:10px;color:var(--text-2);font-style:italic;line-height:1.4;">';
+    reasoning = '<div style="margin-top:8px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.05);font-size:13px;color:var(--text-2);font-style:italic;line-height:1.4;">';
     if (ip.why_must)     reasoning += '<div>\u2022 <span style="color:#4ade80;">MUST:</span> ' + _escapeHtml(ip.why_must) + '</div>';
     if (ip.why_suppress) reasoning += '<div>\u2022 <span style="color:#f87171;">SUPPRESS:</span> ' + _escapeHtml(ip.why_suppress) + '</div>';
     reasoning += '</div>';
@@ -2856,7 +3714,7 @@ function _renderPriorityBlock(payload) {
     '<div style="margin:6px 0;padding:8px 10px;border:1px solid rgba(255,255,255,0.08);' +
       'border-radius:8px;background:rgba(255,255,255,0.02);">' +
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">' +
-        '<span style="font-size:10px;color:var(--text-3);letter-spacing:0.4px;font-weight:600;">' +
+        '<span style="font-size:13px;color:var(--text-3);letter-spacing:0.4px;font-weight:600;">' +
           '\uD83C\uDFAF INFORMATION PRIORITY' +
         '</span>' +
       '</div>' +
@@ -2896,12 +3754,12 @@ function _renderResolutionBlock(renderModel) {
   });
 
   var rowsHtml = semanticRows.map(function (r) {
-    return '<div style="display:grid;grid-template-columns:1.1fr auto 1fr;gap:8px;padding:3px 0;align-items:center;font-size:10px;line-height:1.35;">' +
+    return '<div style="display:grid;grid-template-columns:1.1fr auto 1fr;gap:8px;padding:3px 0;align-items:center;font-size:13px;line-height:1.35;">' +
       '<span style="color:#a78bfa;font-weight:500;">' + _escapeHtml(r.semantic) + '</span>' +
       '<span style="color:var(--text-3);">\u2192</span>' +
       '<span style="color:#fff;font-family:ui-monospace,monospace;">' + _escapeHtml(r.atomic) + '</span>' +
       (r.note
-        ? '<div style="grid-column:1 / -1;color:var(--text-3);font-style:italic;font-size:9px;padding-left:2px;margin-top:1px;">' + _escapeHtml(r.note) + '</div>'
+        ? '<div style="grid-column:1 / -1;color:var(--text-3);font-style:italic;font-size:13px;padding-left:2px;margin-top:1px;">' + _escapeHtml(r.note) + '</div>'
         : '') +
     '</div>';
   }).join('');
@@ -2912,11 +3770,11 @@ function _renderResolutionBlock(renderModel) {
   var innerHtml = semanticRows.length
     ? rowsHtml +
       (directCount
-        ? '<div style="font-size:10px;color:var(--text-3);margin-top:6px;font-style:italic;">+ ' +
+        ? '<div style="font-size:13px;color:var(--text-3);margin-top:6px;font-style:italic;">+ ' +
             directCount + ' direct atomic component' + (directCount === 1 ? '' : 's') +
             ' (no semantic wrapper)</div>'
         : '')
-    : '<div style="font-size:10px;color:var(--text-3);font-style:italic;">AI emitted ' +
+    : '<div style="font-size:13px;color:var(--text-3);font-style:italic;">AI emitted ' +
         directCount + ' direct atomic component' + (directCount === 1 ? '' : 's') +
         ' \u2014 no semantic ids used this round.</div>';
 
@@ -2925,10 +3783,10 @@ function _renderResolutionBlock(renderModel) {
     '<div style="margin:6px 0;padding:8px 10px;border:1px solid rgba(255,255,255,0.08);' +
       'border-radius:8px;background:rgba(255,255,255,0.02);">' +
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">' +
-        '<span style="font-size:10px;color:var(--text-3);letter-spacing:0.4px;font-weight:600;">' +
+        '<span style="font-size:13px;color:var(--text-3);letter-spacing:0.4px;font-weight:600;">' +
           '\uD83D\uDD17 COMPONENT RESOLUTION' +
         '</span>' +
-        '<span style="font-size:9px;color:var(--text-3);">' +
+        '<span style="font-size:13px;color:var(--text-3);">' +
           semanticRows.length + ' semantic / ' + directCount + ' direct' +
         '</span>' +
       '</div>' +
@@ -3006,9 +3864,9 @@ function _renderFlowBlock(flowPlan, currentIdx) {
         (isCurrent ? 'background:rgba(62,145,255,0.12);border:1px solid rgba(62,145,255,0.3);' : 'border:1px solid transparent;') +
       '">' +
         '<span style="width:8px;height:8px;border-radius:50%;background:' + accent + ';flex-shrink:0;"></span>' +
-        '<span style="color:var(--text-3);font-size:9px;letter-spacing:0.3px;text-transform:uppercase;min-width:72px;">' + _escapeHtml(n.kind || '?') + '</span>' +
-        '<span style="color:#fff;font-size:11px;font-weight:500;flex:1;">' + _escapeHtml(n.intent || '(unspecified)') + '</span>' +
-        '<span style="color:var(--text-3);font-family:ui-monospace,monospace;font-size:9px;">#' + _escapeHtml(n.id || ('n' + (i + 1))) + '</span>' +
+        '<span style="color:var(--text-3);font-size:13px;letter-spacing:0.3px;text-transform:uppercase;min-width:72px;">' + _escapeHtml(n.kind || '?') + '</span>' +
+        '<span style="color:#fff;font-size:13px;font-weight:500;flex:1;">' + _escapeHtml(n.intent || '(unspecified)') + '</span>' +
+        '<span style="color:var(--text-3);font-family:ui-monospace,monospace;font-size:13px;">#' + _escapeHtml(n.id || ('n' + (i + 1))) + '</span>' +
       '</div>'
     );
   }).join('');
@@ -3016,14 +3874,14 @@ function _renderFlowBlock(flowPlan, currentIdx) {
   var edgeRows = edges.length
     ? edges.map(function (e) {
         return (
-          '<div style="display:flex;align-items:center;gap:6px;padding:2px 6px;color:var(--text-3);font-size:10px;font-family:ui-monospace,monospace;">' +
+          '<div style="display:flex;align-items:center;gap:6px;padding:2px 6px;color:var(--text-3);font-size:13px;font-family:ui-monospace,monospace;">' +
             '<span style="color:#94a3b8;">' + _escapeHtml(e.from || '') + '</span>' +
             '<span style="color:var(--text-3);">\u2500\u2500 ' + _escapeHtml(e.trigger || '') + ' \u25B6</span>' +
             '<span style="color:#94a3b8;">' + _escapeHtml(e.to || '') + '</span>' +
           '</div>'
         );
       }).join('')
-    : '<div style="color:var(--text-3);font-size:10px;font-style:italic;padding:2px 6px;">single-node flow (no edges)</div>';
+    : '<div style="color:var(--text-3);font-size:13px;font-style:italic;padding:2px 6px;">single-node flow (no edges)</div>';
 
   var wrap = document.createElement('div');
   wrap.setAttribute('data-block', 'flow');
@@ -3031,10 +3889,10 @@ function _renderFlowBlock(flowPlan, currentIdx) {
     '<div style="margin:6px 0;padding:8px 10px;border:1px solid rgba(255,255,255,0.08);' +
       'border-radius:8px;background:rgba(255,255,255,0.02);">' +
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">' +
-        '<span style="font-size:10px;color:var(--text-3);letter-spacing:0.4px;font-weight:600;">' +
+        '<span style="font-size:13px;color:var(--text-3);letter-spacing:0.4px;font-weight:600;">' +
           '\uD83D\uDD00 FLOW GRAPH' +
         '</span>' +
-        '<span style="font-size:9px;color:var(--text-3);">' +
+        '<span style="font-size:13px;color:var(--text-3);">' +
           nodes.length + ' node' + (nodes.length === 1 ? '' : 's') +
           (edges.length ? (' / ' + edges.length + ' edge' + (edges.length === 1 ? '' : 's')) : '') +
         '</span>' +
@@ -3377,7 +4235,7 @@ function autoIterShowHistory() {
     const isBest = idx === state.bestIdx;
     const violColor = rec.violationsTotal === 0 ? '#86EFAC' : rec.violationsHigh > 0 ? '#FCA5A5' : '#FDE68A';
     body += '<div style="border:' + (isBest ? '2px solid #86EFAC' : '1px solid var(--divider)') + ';border-radius:10px;padding:12px;background:rgba(255,255,255,0.02);">';
-    body += '<div style="font-weight:600;margin-bottom:6px;">Iter ' + (idx + 1) + (isBest ? ' <span style="color:#86EFAC;font-size:10px;">★ BEST</span>' : '') + '</div>';
+    body += '<div style="font-weight:600;margin-bottom:6px;">Iter ' + (idx + 1) + (isBest ? ' <span style="color:#86EFAC;font-size:13px;">★ BEST</span>' : '') + '</div>';
     if (rec.snapshotDataUrl) {
       // image-rendering:auto + a moderately wide column so the 2× capture
       // downscales smoothly. Click the image to open at full resolution
@@ -3388,11 +4246,11 @@ function autoIterShowHistory() {
         'image-rendering:auto;display:block;" ' +
         'title="Click to open at full resolution" />';
     } else {
-      body += '<div style="height:120px;background:rgba(255,255,255,0.04);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--text-3);margin-bottom:8px;">(no snapshot)</div>';
+      body += '<div style="height:120px;background:rgba(255,255,255,0.04);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:13px;color:var(--text-3);margin-bottom:8px;">(no snapshot)</div>';
     }
-    body += '<div style="font-size:10px;color:' + violColor + ';">violations: ' + rec.violationsTotal + ' (H' + rec.violationsHigh + '/M' + rec.violationsMed + '/L' + rec.violationsLow + ')</div>';
-    if (rec.fixed.length) body += '<div style="font-size:10px;color:#86EFAC;margin-top:4px;">fixed: ' + rec.fixed.slice(0,3).join(', ') + (rec.fixed.length > 3 ? '…' : '') + '</div>';
-    if (rec.unfixed.length) body += '<div style="font-size:10px;color:#FCA5A5;margin-top:2px;">unfixed: ' + rec.unfixed.slice(0,3).join(', ') + (rec.unfixed.length > 3 ? '…' : '') + '</div>';
+    body += '<div style="font-size:13px;color:' + violColor + ';">violations: ' + rec.violationsTotal + ' (H' + rec.violationsHigh + '/M' + rec.violationsMed + '/L' + rec.violationsLow + ')</div>';
+    if (rec.fixed.length) body += '<div style="font-size:13px;color:#86EFAC;margin-top:4px;">fixed: ' + rec.fixed.slice(0,3).join(', ') + (rec.fixed.length > 3 ? '…' : '') + '</div>';
+    if (rec.unfixed.length) body += '<div style="font-size:13px;color:#FCA5A5;margin-top:2px;">unfixed: ' + rec.unfixed.slice(0,3).join(', ') + (rec.unfixed.length > 3 ? '…' : '') + '</div>';
     body += '</div>';
   });
   body += '</div>';
@@ -3448,10 +4306,27 @@ async function pipelineGenerateSingle(promptText) {
     // only the narrative prose is missing.
     const _outputLogChk = document.getElementById('outputLogToggle');
     const fastMode = !!(_outputLogChk && !_outputLogChk.checked);
+    /** Optional structured overrides (music, bottom-sheet uiState, slot copy) — see pipeline.applyUserSupplements */
+    let userSupplements = null;
+    const _supEl = document.getElementById('genUserSupplements');
+    if (_supEl && _supEl.value && String(_supEl.value).trim()) {
+      try {
+        userSupplements = JSON.parse(String(_supEl.value).trim());
+      } catch (e) {
+        console.error('[pipeline] userSupplements JSON', e);
+        alert('userSupplements JSON 형식이 잘못되었습니다: ' + e.message);
+        _pipelineError('Invalid userSupplements JSON');
+        return null;
+      }
+    }
+    const _reqBody = { scenario_text: prompt, fastMode: fastMode };
+    if (userSupplements && typeof userSupplements === 'object') {
+      _reqBody.userSupplements = userSupplements;
+    }
     const resp = await fetch('/api/pipeline/full/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
-      body: JSON.stringify({ scenario_text: prompt, fastMode: fastMode })
+      body: JSON.stringify(_reqBody)
     });
     if (!resp.ok || !resp.body) throw new Error('HTTP ' + resp.status);
 
@@ -3582,6 +4457,7 @@ async function pipelineGenerateAutoIterate(initialPrompt) {
 window.pipelineGenerate = pipelineGenerate;
 window.pipelineGenerateSingle = pipelineGenerateSingle;
 window.pipelineGenerateAutoIterate = pipelineGenerateAutoIterate;
+window.renderPipelineResponse = renderPipelineResponse;
 
 // Per-event handler. Each SSE event from /api/pipeline/full/stream is
 // rendered as its own status line + collapsible JSON block.
@@ -3911,6 +4787,7 @@ function generateScreen(scenarioKey, buttonEl) {
     document.querySelectorAll('.scene-btn[data-role="overlay"].active')
       .forEach(function (b) { b.classList.remove('active'); });
     if (typeof window.clearCanvas === 'function') window.clearCanvas();
+    window.__lastPipelineRenderBundle = null;
     _refreshOverlayHint();
     return;
   }
@@ -3998,6 +4875,7 @@ function _removeOverlayLayer() {
     frameEl.querySelectorAll(':scope > .overlay-inner').forEach(function (n) { n.remove(); });
     delete frameEl.dataset.overlayActive;
     delete frameEl.dataset.overlayBase;
+    delete frameEl.dataset.overlayKind;
   }
 
   var rulesInner = canvas._rulesInner;
@@ -4017,6 +4895,20 @@ function _removeOverlayLayer() {
     if (kept.length !== window.DesignDoc.state.nodes.length) {
       window.DesignDoc.state.nodes = kept;
     }
+  }
+}
+
+// Solid white stacked notifs over Home/List/Detail are a legacy baseline
+// (Default / base preset only). Gradient · Glass · Flat · Neon · Grain all
+// use the same tokenized atomics as the rest of GenUI — otherwise theme
+// changes never reached the overlay layer (always `theme: light`).
+function _overlayLegacyLightNotifications() {
+  try {
+    if (typeof document === 'undefined' || !document.documentElement) return true;
+    var v = (getComputedStyle(document.documentElement).getPropertyValue('--oneui-theme-style') || '').trim().toLowerCase();
+    return v === '' || v === 'base';
+  } catch (e) {
+    return true;
   }
 }
 
@@ -4091,7 +4983,6 @@ function _renderOverlay(overlayKey) {
   var frameEl = document.getElementById('canvasFrame');
   var hostEl = frameEl || canvas;
   hostEl.appendChild(overlayInner);
-  if (frameEl) frameEl.dataset.overlayActive = '1';
 
   // An inner wrapper re-applies 0.78 zoom so plan children (at Figma
   // 451×978 coords) render at the same scale as the base screen inside
@@ -4118,17 +5009,24 @@ function _renderOverlay(overlayKey) {
   var isNotif = overlayKey === 'notifications' || overlayKey === 'notification' ||
                 overlayKey === 'notif';
   var isDialog = overlayKey === 'dialog';
+
+  // Frame-level flags for CSS (e.g. hide duplicate base gestureBar when QS
+  // renders its own). Must run after isQS / isNotif / isDialog are known.
+  if (frameEl) {
+    frameEl.dataset.overlayActive = '1';
+    frameEl.dataset.overlayKind = isQS ? 'quicksettings'
+      : isNotif ? 'notifications'
+      : isDialog ? 'dialog'
+      : 'other';
+  }
+
   if (isQS)          maskHost.classList.add('overlay-hides-all');
   else if (isDialog) maskHost.classList.add('overlay-hides-statusbar');
   // Notif: no mask — just cards floating on the untouched base.
 
-  // Determine the theme for notif cards based on the CURRENT base screen:
-  //   Lock → dark (glass dark bg + blurred wallpaper behind; cards stay
-  //                translucent dark to match the shade treatment)
-  //   Home / List / Detail → light (no blur; cards become solid white with
-  //                black text so they pop against app content)
-  // QS keeps its dark shade regardless of base (Samsung always shows QS
-  // with the wallpaper blur + dark translucent tint).
+  // Notif-card theme: Lock → dark. Day bases → solid white ONLY when the
+  // global preset is Default (`--oneui-theme-style: base`). Themed presets
+  // keep dark + `_G(panel)` so glass/gradient/grain propagate from tokens.
   var baseKey = window.__currentBaseScenario || 'lockscreen';
   var baseIsLock = (baseKey === 'lockscreen' || baseKey === 'lock');
   // When ANY overlay opens over Lock, fade out the Lock-screen decorative
@@ -4138,7 +5036,7 @@ function _renderOverlay(overlayKey) {
   if (baseIsLock && (isQS || isNotif || isDialog)) {
     maskHost.classList.add('overlay-hides-lock-content');
   }
-  var notifTheme = (isNotif && !baseIsLock) ? 'light' : 'dark';
+  var notifTheme = (isNotif && !baseIsLock && _overlayLegacyLightNotifications()) ? 'light' : 'dark';
   overlayInner.dataset.theme = notifTheme;
   overlayInner.dataset.base = baseKey;
   // Mirror the base onto canvas-frame so CSS can scope behavior (e.g.
@@ -4243,6 +5141,7 @@ function generateScenario(scenarioKey) {
   }
 
   clearCanvas();
+  window.__lastPipelineRenderBundle = null;
 
   // 3) Tier 1 — Figma-ground-truth rules (Lock / QS / Notif / Dialog).
   //    These have pixel-accurate atomics extracted from Figma designs and
@@ -4318,6 +5217,7 @@ function _startLiveTimerTick() {
     if (!nodes.length) return;
     var now = Date.now();
     nodes.forEach(function (el) {
+      if (el.getAttribute('data-paused') === '1') return;
       var start = parseInt(el.getAttribute('data-start'), 10) || now;
       var elapsed = Math.max(0, Math.floor((now - start) / 1000));
       var h = Math.floor(elapsed / 3600);
@@ -4335,6 +5235,29 @@ if (typeof document !== 'undefined') {
   } else {
     _startLiveTimerTick();
   }
+}
+
+// Pause / resume stopwatch on pipeline now-bar (no ⌘ required).
+if (typeof document !== 'undefined') {
+  document.addEventListener('click', function (e) {
+    var btn = e.target && e.target.closest && e.target.closest('[data-timer-pause="1"]');
+    if (!btn) return;
+    e.stopPropagation();
+    var shell = btn.closest('[data-now-bar-shell="1"]');
+    var tel = shell && shell.querySelector('[data-live-timer="1"]');
+    if (!tel) return;
+    var paused = tel.getAttribute('data-paused') === '1';
+    if (!paused) {
+      tel.setAttribute('data-paused', '1');
+      tel.setAttribute('data-pause-began', String(Date.now()));
+    } else {
+      var start = parseInt(tel.getAttribute('data-start'), 10) || Date.now();
+      var pb = parseInt(tel.getAttribute('data-pause-began'), 10) || Date.now();
+      tel.setAttribute('data-start', String(start + (Date.now() - pb)));
+      tel.removeAttribute('data-paused');
+      tel.removeAttribute('data-pause-began');
+    }
+  }, false);
 }
 
 // --------------------------------------------------------------------------

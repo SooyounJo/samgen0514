@@ -101,40 +101,151 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 
 
-// === EXPORT ===
-function exportHTML() {
+// === EXPORT (self-contained, re-importable) ===
+//
+// Produces a single HTML file with EVERY stylesheet inlined plus the
+// currently-active theme variables AND a JSON metadata block. The file
+// renders correctly when opened anywhere (no server, no network besides
+// Google Fonts). When dropped into /customize → "Import HTML", the same
+// file becomes the source of a brand-new editable theme preset.
+//
+// What lands in the export:
+//   1. <link>  Google Fonts (kept as remote — cheap, common)
+//   2. <style> The full css/genui.css text (fetched at export time)
+//   3. <style id="theme-vars"> Whatever /api/themes wrote at runtime
+//      (i.e. the active theme's :root tokens)
+//   4. <style data-export="inline-overrides"> Any CSS variables the
+//      user changed via the customize page that haven't been saved as
+//      a theme yet (read from document.documentElement.style)
+//   5. <!-- ONEUI_EXPORT_META: {...} --> machine-readable JSON with
+//      all extractable theme tokens. This is what Import parses.
+async function exportHTML() {
   const canvas = document.getElementById('canvas');
+  if (!canvas) return;
   const clone = canvas.cloneNode(true);
-  // Remove UI helpers
   clone.querySelectorAll('.canvas-delete, .canvas-empty').forEach(e => e.remove());
   clone.querySelectorAll('.canvas-item').forEach(e => {
     e.classList.remove('canvas-item', 'selected');
     e.style.outline = '';
     e.removeAttribute('id');
   });
+
+  // (1) Fetch the project's main stylesheet so the export renders the
+  //     same set of rules the live app does. Same-origin fetch, no CORS.
+  let mainCSS = '';
+  try {
+    const r = await fetch('css/genui.css', { cache: 'no-cache' });
+    if (r.ok) mainCSS = await r.text();
+  } catch (e) {
+    console.warn('[export] failed to fetch css/genui.css:', e.message);
+  }
+
+  // (2) Capture the active-theme :root block (server-rendered into
+  //     <style id="theme-vars"> at runtime).
+  const themeVarsEl = document.getElementById('theme-vars');
+  const themeVarsCSS = themeVarsEl ? themeVarsEl.textContent : '';
+
+  // (3) Capture inline overrides — anything the user typed in the
+  //     customize editor without saving. These live on <html> as
+  //     element.style.setProperty('--xxx', '…').
+  const inlineOverrides = (document.documentElement.getAttribute('style') || '')
+    .split(';').map(s => s.trim()).filter(s => s.startsWith('--'));
+  const inlineOverridesCSS = inlineOverrides.length
+    ? `:root { ${inlineOverrides.join('; ')}; }`
+    : '';
+
+  // (4) Build the metadata JSON. Import reads this directly so it
+  //     doesn't have to re-parse the inline CSS. Keep this list in
+  //     sync with THEME_EDIT_SCHEMA in customize.html — every key
+  //     the editor exposes should also round-trip through export.
+  const themeVarKeys = [
+    // Page
+    '--page-bg','--text-primary','--text-secondary','--text-tertiary',
+    '--accent-primary','--accent-on-primary',
+    // Card globals
+    '--card-radius','--card-padding-v','--card-padding-h','--card-gap',
+    // Per-card overrides
+    '--card-weather-accent','--card-weather-temp-color','--card-weather-temp-size',
+    '--card-weather-temp-weight','--card-weather-temp-letterspacing','--card-weather-icon-size',
+    '--card-calendar-accent','--card-calendar-time-size','--card-calendar-time-weight',
+    '--card-reminder-accent','--card-reminder-task-size',
+    '--card-message-avatar-grad','--card-message-avatar-size',
+    '--card-eta-accent','--card-eta-size','--card-eta-icon-size',
+    '--card-nav-accent','--card-nav-distance-size','--card-nav-arrow-bg',
+    '--card-ai-grad','--card-ai-shimmer-speed','--card-input-topic-size',
+    // Surface chrome
+    '--surface-bg','--surface-border','--surface-shadow','--surface-filter',
+    '--surface-overlay','--surface-overlay-opacity','--qs-tile-bg',
+    // Typography (new — must round-trip)
+    '--font-family-display','--font-family-body','--font-family-mono',
+    '--font-size-xs','--font-size-sm','--font-size-md','--font-size-lg','--font-size-xl','--font-size-display',
+    '--font-weight-regular','--font-weight-medium','--font-weight-semibold','--font-weight-bold',
+    '--letter-spacing-tight','--letter-spacing-normal','--letter-spacing-wide',
+    '--line-height-tight','--line-height-normal','--line-height-relaxed',
+    // Spacing scale (new)
+    '--space-xxs','--space-xs','--space-sm','--space-md','--space-lg','--space-xl',
+    // Composition (new — driver of screen-level layout)
+    '--screen-padding-v','--screen-padding-h',
+    '--gap-screen','--gap-cards','--container-margin-bottom',
+    '--screen-grid-columns','--screen-grid-gap'
+  ];
+  const computed = getComputedStyle(document.documentElement);
+  const themeVars = {};
+  themeVarKeys.forEach(k => {
+    const v = computed.getPropertyValue(k).trim();
+    if (v) themeVars[k] = v;
+  });
   const isDark = !document.getElementById('canvasFrame').classList.contains('light');
+  const exportMeta = {
+    schema:        'oneui.export/v1',
+    exportedAt:    new Date().toISOString(),
+    canvasMode:    isDark ? 'dark' : 'light',
+    activeThemeId: (window.localStorage && localStorage.getItem('oneuiActiveThemeId')) || null,
+    themeVars:     themeVars
+  };
+  // Embed as an HTML comment with a stable sentinel so Import can grep it.
+  const metaComment = `<!-- ONEUI_EXPORT_META:${JSON.stringify(exportMeta)}:END -->`;
+
   const html = `<!DOCTYPE html>
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>One UI 8.5 Export</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<style>
-* { margin:0; padding:0; box-sizing:border-box; }
-body { font-family:'Inter',sans-serif; background:${isDark ? '#171717' : '#FCFCFC'}; color:${isDark ? '#FAFAFA' : '#252525'}; padding:16px; }
+${metaComment}
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style data-export="genui.css">
+${mainCSS}
+</style>
+<style id="theme-vars" data-export="theme-vars">
+${themeVarsCSS}
+</style>${inlineOverridesCSS ? `
+<style data-export="inline-overrides">
+${inlineOverridesCSS}
+</style>` : ''}
+<style data-export="page-bg">
+body { margin:0; background:${isDark ? '#171717' : '#FCFCFC'}; color:${isDark ? '#FAFAFA' : '#252525'}; }
+.export-wrap { padding:16px; max-width:520px; margin:0 auto; }
 </style>
 </head>
 <body>
-${clone.innerHTML}
+<div class="export-wrap">
+  ${clone.innerHTML}
+</div>
 </body>
 </html>`;
-  const blob = new Blob([html], { type: 'text/html' });
+
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = 'oneui-export.html';
+  a.download = `oneui-export-${Date.now()}.html`;
   a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  console.log('[export] wrote oneui-export.html with ' + Object.keys(themeVars).length + ' theme vars + ' + Math.round(mainCSS.length / 1024) + ' KB CSS');
 }
+window.exportHTML = exportHTML;
 
 // === GEN/STATIC HARMONY ANALYSIS ===
 function analyzeHarmony() {
@@ -173,7 +284,7 @@ function analyzeHarmony() {
 
   if (issues.length === 0) {
     report += `<div style="color:#2ecc71;">&#10003; Good harmony. Static anchors frame the Gen content well.</div>`;
-    report += `<div style="margin-top:6px;font-size:10px;color:var(--text-3);">Motion: Gen components use Emphasized (0.2,0,0,1) with stagger. Static components use Basic Path (0.22,0.25,0,1). This creates visual hierarchy \u2014 static elements settle first, gen content flows in after.</div>`;
+    report += `<div style="margin-top:6px;font-size:13px;color:var(--text-3);">Motion: Gen components use Emphasized (0.2,0,0,1) with stagger. Static components use Basic Path (0.22,0.25,0,1). This creates visual hierarchy \u2014 static elements settle first, gen content flows in after.</div>`;
   } else {
     issues.forEach(issue => {
       report += `<div style="color:#F9A825;margin-bottom:4px;">&#9888; ${issue}</div>`;
@@ -564,7 +675,7 @@ function _renderAgentPatchPlan(patchPlan) {
   `).join('');
 
   if (refinePatches.length === 0) {
-    list.innerHTML = '<div style="font-size:12px;color:var(--text-3);padding:10px;">No patches returned by agent.</div>';
+    list.innerHTML = '<div style="font-size:13px;color:var(--text-3);padding:10px;">No patches returned by agent.</div>';
   }
 }
 
@@ -708,7 +819,7 @@ function _local_planRefinementPatches() {
   `).join('');
 
   if (refinePatches.length === 0) {
-    list.innerHTML = '<div style="font-size:12px;color:var(--text-3);padding:10px;">No concrete patches generated. Try providing more specific feedback.</div>';
+    list.innerHTML = '<div style="font-size:13px;color:var(--text-3);padding:10px;">No concrete patches generated. Try providing more specific feedback.</div>';
   }
 
   showRefineStep(3);

@@ -5,11 +5,22 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>GenUI - Samsung One UI 8.5 Design Builder</title>
 
-<!-- Theme bootstrap — applies the active theme's CSS variables to :root
-     before the rest of the page paints, so cards render with the theme
-     from the very first frame instead of flashing the default first.
-     Themes are managed at /customize. The active id is read from
-     figma-refs/themes.json via /api/themes. -->
+<!-- Theme tokens: css/genui.css defines :root fallbacks first; this
+     empty <style id="theme-vars"> is filled by /api/themes and MUST sit
+     AFTER genui.css so preset values (Neon black text, Glass borders,
+     etc.) win the cascade. -->
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<!-- Lock-screen clock font — Space Grotesk (Google, display-geometric sans).
+     Paired with Inter for UI / body text. Preconnect so the clock renders
+     with the correct metrics on first paint (no FOUT when lock screen
+     generates). Space Mono is kept loaded for backward compatibility with
+     older generated scenes that reference it, but new renders default to
+     Space Grotesk. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/genui.css">
 <style id="theme-vars"></style>
 <script>
   // Theme system — boot apply + Generate-panel picker + cross-window
@@ -25,9 +36,27 @@
     let CACHED_THEMES = null;
 
     function applyVarsToRoot(vars) {
-      const css = ':root {\n' +
-        Object.entries(vars).map(([k, v]) => '  ' + k + ': ' + v + ';').join('\n') +
-      '\n}';
+      var raw = vars || {};
+      // Document globals: surface renderer reads `--oneui-theme-style` /
+      // chroma from :root (`getComputedStyle(document.documentElement)`).
+      // Palette tokens (`--text-primary`, surfaces, QS chips, …) live on the
+      // device frames only so Neon black ink does not recolor sidebar/topbar.
+      var DOC_KEYS = new Set(['--oneui-theme-style', '--oneui-chroma']);
+      var rootLines = [];
+      var frameLines = [];
+      Object.keys(raw).forEach(function (key) {
+        var v = raw[key];
+        var line = '  ' + key + ': ' + v + ';';
+        if (DOC_KEYS.has(key)) rootLines.push(line);
+        else frameLines.push(line);
+      });
+      var css = '';
+      if (rootLines.length) {
+        css += ':root {\n' + rootLines.join('\n') + '\n}\n';
+      }
+      if (frameLines.length) {
+        css += '#canvasFrame, #canvasFrameB {\n' + frameLines.join('\n') + '\n}\n';
+      }
       const style = document.getElementById(STYLE_EL_ID);
       if (style) style.textContent = css;
     }
@@ -56,7 +85,12 @@
           window.__activeTheme = active && active.id;
           // Wait one tick — the picker element may not exist yet at
           // boot time (it's later in the DOM than this <head> script).
-          setTimeout(() => populatePicker(data.themes, active && active.id), 0);
+          setTimeout(function () {
+            populatePicker(data.themes, active && active.id);
+            if (typeof window.refreshCanvasForTheme === 'function') {
+              window.refreshCanvasForTheme();
+            }
+          }, 0);
         })
         .catch(() => {});
     }
@@ -74,6 +108,11 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id })
       }).catch(() => {});
+      requestAnimationFrame(function () {
+        if (typeof window.refreshCanvasForTheme === 'function') {
+          window.refreshCanvasForTheme();
+        }
+      });
     };
 
     // Cross-window sync — listens for 'theme-saved' broadcasts from
@@ -95,18 +134,6 @@
     loadAndApply();
   })();
 </script>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-<!-- Lock-screen clock font — Space Grotesk (Google, display-geometric sans).
-     Paired with Inter for UI / body text. Preconnect so the clock renders
-     with the correct metrics on first paint (no FOUT when lock screen
-     generates). Space Mono is kept loaded for backward compatibility with
-     older generated scenes that reference it, but new renders default to
-     Space Grotesk. -->
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/genui.css">
 <!-- html-to-image — used by the auto-iterate loop to capture canvas
      snapshots. Uses the SVG <foreignObject> + native rasterization
      approach, which produced pixel-accurate captures in our test
@@ -205,10 +232,10 @@
     <div id="agentModeIndicator" class="agent-mode-indicator local" onclick="toggleAgentMode()" style="display:none;" title="Local / AI agent mode (hidden — Pipeline is always active)">Local</div>
 
     <!-- ACTION — destructive canvas action sits last to reduce mis-clicks
-         on adjacent settings. Export HTML was removed — the site's value
-         is in dynamic AI generation; static HTML export added clutter
-         with little use. If a real export workflow is needed later, the
-         Design tab is a better home for it. -->
+         on adjacent settings. Export HTML produces a self-contained file
+         with all CSS + active theme inlined; the file can be re-imported
+         in /customize to extract its theme as a new editable preset. -->
+    <button class="topbar-btn" onclick="exportHTML()" title="Save canvas as a self-contained HTML file (all CSS + theme inlined, re-importable in Customize)">Export HTML</button>
     <button class="topbar-btn" onclick="clearCanvas()">Clear</button>
   </div>
 </div>
@@ -275,7 +302,7 @@
       <!-- PANEL 1: LAYOUT -->
       <div class="panel" id="panel-1">
         <div class="panel-section">
-          <div class="panel-label">Layout Presets</div>
+          <div class="panel-label">레이아웃 프리셋</div>
           <div class="layout-grid">
             <div>
               <div class="layout-preset active" onclick="setLayout('column',this)">
@@ -283,21 +310,21 @@
                 <div class="lp-col"></div>
                 <div class="lp-col"></div>
               </div>
-              <div class="layout-label">Column</div>
+              <div class="layout-label">세로 스택</div>
             </div>
             <div>
               <div class="layout-preset" onclick="setLayout('two-col',this)">
                 <div class="lp-bar" style="height:6px;"></div>
                 <div class="lp-row"><div class="lp-col"></div><div class="lp-col"></div></div>
               </div>
-              <div class="layout-label">Two Col</div>
+              <div class="layout-label">두 열</div>
             </div>
             <div>
               <div class="layout-preset" onclick="setLayout('grid',this)">
                 <div class="lp-row"><div class="lp-col"></div><div class="lp-col"></div></div>
                 <div class="lp-row"><div class="lp-col"></div><div class="lp-col"></div></div>
               </div>
-              <div class="layout-label">Grid 2x2</div>
+              <div class="layout-label">2×2 그리드</div>
             </div>
             <div>
               <div class="layout-preset" onclick="setLayout('app',this)">
@@ -305,7 +332,7 @@
                 <div class="lp-col"></div>
                 <div class="lp-bar" style="height:8px;"></div>
               </div>
-              <div class="layout-label">App Screen</div>
+              <div class="layout-label">앱 본문</div>
             </div>
             <div>
               <div class="layout-preset" onclick="setLayout('hero',this)">
@@ -313,13 +340,13 @@
                 <div class="lp-bar" style="height:4px;"></div>
                 <div class="lp-col"></div>
               </div>
-              <div class="layout-label">Hero</div>
+              <div class="layout-label">히어로 + 목록</div>
             </div>
             <div>
               <div class="layout-preset" onclick="setLayout('free',this)">
                 <div class="lp-col" style="opacity:0.3;"></div>
               </div>
-              <div class="layout-label">Free</div>
+              <div class="layout-label">자유 배치</div>
             </div>
           </div>
         </div>
@@ -695,6 +722,14 @@
               <input type="checkbox" id="outputLogToggle" checked style="margin:0;cursor:pointer;">
               <span>Output log</span>
             </label>
+
+            <details class="genui-user-supplements-details" title="Optional JSON merged into the pipeline after the model runs (music row, uiState, slots)." style="flex-basis:100%;margin-top:6px;border-radius:8px;border:1px solid var(--divider);background:rgba(255,255,255,0.02);padding:8px 10px;">
+              <summary style="cursor:pointer;user-select:none;font-size:11px;color:var(--text-2);font-weight:600;">고급: userSupplements (JSON)</summary>
+              <p style="margin:8px 0 6px;font-size:10px;color:var(--text-3);line-height:1.45;">모델 결과 뒤에 <code style="font-size:10px;">병합</code>됩니다. 예: <code style="font-size:10px;">nowPlaying</code>, <code style="font-size:10px;">uiState</code>(바텀시트), <code style="font-size:10px;">contentBySlot</code>, <code style="font-size:10px;">layoutPlan.floatingSheetTheme</code>.</p>
+              <textarea id="genUserSupplements" rows="5" spellcheck="false"
+                placeholder='{"nowPlaying":{"title":"Blinding Lights","artist":"The Weeknd"},"uiState":{"overlayType":"system-dialog","backgroundPolicy":"dialog-surface","floatingSheetTheme":"light"},"layoutPlan":{"floatingSheetTheme":"light"}}'
+                style="width:100%;min-height:88px;border-radius:10px;border:1px solid var(--divider);background:var(--surface);color:var(--text);font-family:ui-monospace,Consolas,monospace;font-size:11px;line-height:1.35;padding:10px;box-sizing:border-box;resize:vertical;"></textarea>
+            </details>
 
             <button id="autoIterStopBtn" onclick="autoIterStop()" style="display:none;padding:6px 12px;border-radius:8px;background:rgba(239,68,68,0.15);color:#FCA5A5;border:1px solid rgba(239,68,68,0.35);font-size:11px;font-weight:600;cursor:pointer;">
               Stop
@@ -1214,7 +1249,7 @@
           </div>
           <div class="design-section-body">
             <div class="panel-section">
-              <div class="panel-label">Layout Presets</div>
+              <div class="panel-label">레이아웃 프리셋</div>
               <div class="layout-grid">
                 <div>
                   <div class="layout-preset active" onclick="setLayout('column',this)">
@@ -1222,21 +1257,21 @@
                     <div class="lp-col"></div>
                     <div class="lp-col"></div>
                   </div>
-                  <div class="layout-label">Column</div>
+                  <div class="layout-label">세로 스택</div>
                 </div>
                 <div>
                   <div class="layout-preset" onclick="setLayout('two-col',this)">
                     <div class="lp-bar" style="height:6px;"></div>
                     <div class="lp-row"><div class="lp-col"></div><div class="lp-col"></div></div>
                   </div>
-                  <div class="layout-label">Two Col</div>
+                  <div class="layout-label">두 열</div>
                 </div>
                 <div>
                   <div class="layout-preset" onclick="setLayout('grid',this)">
                     <div class="lp-row"><div class="lp-col"></div><div class="lp-col"></div></div>
                     <div class="lp-row"><div class="lp-col"></div><div class="lp-col"></div></div>
                   </div>
-                  <div class="layout-label">Grid 2x2</div>
+                  <div class="layout-label">2×2 그리드</div>
                 </div>
                 <div>
                   <div class="layout-preset" onclick="setLayout('app',this)">
@@ -1244,7 +1279,7 @@
                     <div class="lp-col"></div>
                     <div class="lp-bar" style="height:8px;"></div>
                   </div>
-                  <div class="layout-label">App Screen</div>
+                  <div class="layout-label">앱 본문</div>
                 </div>
                 <div>
                   <div class="layout-preset" onclick="setLayout('hero',this)">
@@ -1252,13 +1287,13 @@
                     <div class="lp-bar" style="height:4px;"></div>
                     <div class="lp-col"></div>
                   </div>
-                  <div class="layout-label">Hero</div>
+                  <div class="layout-label">히어로 + 목록</div>
                 </div>
                 <div>
                   <div class="layout-preset" onclick="setLayout('free',this)">
                     <div class="lp-col" style="opacity:0.3;"></div>
                   </div>
-                  <div class="layout-label">Free</div>
+                  <div class="layout-label">자유 배치</div>
                 </div>
               </div>
             </div>

@@ -57,6 +57,44 @@
     --card-ai-grad: linear-gradient(120deg, rgba(102,161,243,0.45) 0%, rgba(167,139,250,0.45) 50%, rgba(34,201,166,0.45) 100%);
     --card-ai-shimmer-speed: 3.6s;
     --card-input-topic-size: 20px;
+
+    /* ── Typography (new) ── */
+    --font-family-display: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-family-body:    'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-family-mono:    'Space Mono', 'SF Mono', Menlo, monospace;
+    --font-size-xs:        11px;
+    --font-size-sm:        13px;
+    --font-size-md:        15px;
+    --font-size-lg:        18px;
+    --font-size-xl:        24px;
+    --font-size-display:   32px;
+    --font-weight-regular:  400;
+    --font-weight-medium:   500;
+    --font-weight-semibold: 600;
+    --font-weight-bold:     700;
+    --letter-spacing-tight:  -0.5px;
+    --letter-spacing-normal: 0;
+    --letter-spacing-wide:   0.5px;
+    --line-height-tight:    1.2;
+    --line-height-normal:   1.45;
+    --line-height-relaxed:  1.6;
+
+    /* ── Spacing scale (new) ── */
+    --space-xxs: 4px;
+    --space-xs:  8px;
+    --space-sm:  12px;
+    --space-md:  16px;
+    --space-lg:  24px;
+    --space-xl:  32px;
+
+    /* ── Composition (screen-level, new) ── */
+    --screen-padding-v: 10px;
+    --screen-padding-h: 12px;
+    --gap-screen:       16px;   /* between groups */
+    --gap-cards:        12px;   /* within a group */
+    --container-margin-bottom: 12px;
+    --screen-grid-columns: 1;   /* 1 | 2 | 3 | "1fr 2fr" */
+    --screen-grid-gap:     16px;
   }
   @keyframes aiShimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
   @keyframes oneuiSurfaceShift {
@@ -244,6 +282,181 @@
     position: relative;
     padding: 0;
   }
+
+  /* Mode toggle (Cards / Screen). Lives above the preview pane. */
+  .preview-mode-toggle {
+    display: inline-flex;
+    border-radius: 999px;
+    background: var(--panel, rgba(23,23,26,0.6));
+    border: 1px solid var(--border, rgba(255,255,255,0.08));
+    padding: 3px;
+    gap: 2px;
+  }
+  .preview-mode-btn {
+    background: transparent;
+    color: var(--text-3, rgba(239,238,242,0.45));
+    border: 0;
+    border-radius: 999px;
+    padding: 5px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .preview-mode-btn.active {
+    background: var(--primary, #0381FE);
+    color: #fff;
+  }
+  .preview-mode-btn:not(.active):hover {
+    color: var(--text, #efeef2);
+  }
+
+  /* Screen-mode preview: 3×2 grid of S26-ratio phones (19.5:9). Each
+     phone runs a DIFFERENT scenario (cooking / weather / calendar / …)
+     so the designer can see how the theme works across screen types
+     at a glance, not just on a single layout. All phones share the
+     same :root tokens, so a slider tweak changes every phone in unison. */
+  .preview-screen-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 8px 0 32px;
+  }
+  .preview-screen-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 18px;
+    width: 100%;
+  }
+  @media (max-width: 1080px) {
+    .preview-screen-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 720px) {
+    .preview-screen-grid { grid-template-columns: 1fr; }
+  }
+  .preview-phone-frame {
+    width: 100%;
+    /* Galaxy S26 aspect ratio: 1080 × 2340 = 19.5:9 = 9/19.5 portrait. */
+    aspect-ratio: 9 / 19.5;
+    border-radius: 28px;
+    background: var(--page-bg, #0a0a0c);
+    border: 4px solid #1a1a1c;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.40), inset 0 0 0 1px rgba(255,255,255,0.05);
+    position: relative;
+    overflow: hidden;
+    font-family: var(--font-family-body, 'Inter', sans-serif);
+    color: var(--text-primary, #efeef2);
+  }
+  .preview-phone-frame .preview-phone-label {
+    position: absolute;
+    top: 6px; left: 50%;
+    transform: translateX(-50%);
+    font-size: 9px;
+    font-weight: 600;
+    color: var(--text-3, rgba(239,238,242,0.45));
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    pointer-events: none;
+    z-index: 2;
+  }
+  .preview-phone-canvas {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    box-sizing: border-box;
+    /* Heart of the live demo: every designer-controllable composition
+       token feeds straight into these CSS rules. Slider in /customize
+       moves → :root var changes → every phone repositions instantly. */
+    padding: var(--screen-padding-v, 14px) var(--screen-padding-h, 12px);
+    padding-top: 22px;   /* leave room for the tiny label */
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-screen, 14px);
+    /* Scale down the atomics so multiple cards fit inside a 9:19.5
+       phone at ~180–230px wide. The atomics author themselves at
+       fixed pixel sizes, so we apply CSS zoom which the renderer
+       respects. */
+    zoom: 0.55;
+  }
+  .preview-screen-group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap-cards, 12px);
+  }
+  .preview-screen-group.is-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--gap-cards, 12px);
+  }
+
+  /* Per-card kind label — invisible by default, blue + visible when
+     the editor focus matches this card's kind. Lives inside the
+     zoomed canvas, so font-size is bumped to compensate (the canvas
+     uses zoom: 0.55, so 18px renders at ~10px).
+     Hidden via opacity (not color) because some renderer rules paint
+     text via `-webkit-text-fill-color` that bypassed the previous
+     `color: transparent` approach — opacity always wins. */
+  .preview-card-wrap {
+    position: relative;
+  }
+  .preview-card-kind-label {
+    position: absolute;
+    top: -16px;
+    left: 0;
+    font-family: var(--font-family-body, 'Inter', sans-serif);
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+    color: var(--primary, #0381FE);
+    -webkit-text-fill-color: var(--primary, #0381FE);
+    opacity: 0;                  /* default: invisible */
+    pointer-events: none;
+    transition: opacity 0.15s ease;
+    white-space: nowrap;
+  }
+  .preview-card-wrap[data-active="true"] .preview-card-kind-label {
+    opacity: 1;
+  }
+
+  /* Editor section heading turns blue when its section matches the
+     active inspector filter. Mirrors the right-pane card label so
+     the user sees the same blue accent on left and right. */
+  .editor-section.is-active-section .editor-section-toggle,
+  .editor-section.is-active-section .editor-section-toggle-label {
+    color: var(--primary, #0381FE);
+    -webkit-text-fill-color: var(--primary, #0381FE);
+  }
+  .preview-screen-chrome {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 2px 4px 8px;
+    color: var(--text-secondary, rgba(239,238,242,0.7));
+    font-size: var(--font-size-xs, 11px);
+    font-weight: var(--font-weight-medium, 500);
+    letter-spacing: var(--letter-spacing-normal, 0);
+  }
+  .preview-screen-header {
+    font-family: var(--font-family-display, 'Inter', sans-serif);
+    font-size: var(--font-size-lg, 18px);
+    font-weight: var(--font-weight-bold, 700);
+    line-height: var(--line-height-tight, 1.2);
+    letter-spacing: var(--letter-spacing-tight, -0.5px);
+    color: var(--text-primary, #efeef2);
+    padding: 0 4px 8px;
+  }
+  .preview-screen-hint {
+    font-size: 11.5px;
+    color: var(--text-3, rgba(239,238,242,0.45));
+    text-align: center;
+    line-height: 1.5;
+  }
+  .preview-screen-hint code {
+    font-family: var(--font-family-mono, monospace);
+    font-size: 10.5px;
+    background: rgba(255,255,255,0.06);
+    padding: 1px 5px;
+    border-radius: 4px;
+  }
   .preview-cell {
     background: transparent;
     border: 0;
@@ -254,10 +467,13 @@
     transition: outline 0.15s ease, border-color 0.15s ease;
   }
   .preview-cell:hover .stage > * { filter: brightness(1.05); }
-  .preview-cell.selected {
-    outline: 2px solid var(--primary, #0381FE);
-    outline-offset: 6px;
-  }
+  /* Selection indicator now lives in the editor's blue "Focused: …"
+     chip at the top of the left pane. The previous 2px blue outline +
+     6px offset on every selected cell read as visual noise once the
+     screen-mode 3×2 grid was added. Click feedback comes from the
+     pointer cursor + the chip; the outline rule stays as a no-op so
+     existing JS that toggles the .selected class doesn't error. */
+  .preview-cell.selected { outline: none; }
   .preview-cell:focus-visible {
     outline: 2px dashed rgba(3, 129, 254, 0.7);
     outline-offset: 2px;
@@ -489,6 +705,15 @@
     <button type="button" class="preview-bg-swatch" data-preview-bg="#f4f5f6" style="--swatch:#f4f5f6" aria-label="화이트 배경" aria-pressed="false"></button>
   </div>
   <span class="spacer"></span>
+  <!-- Import HTML — pulls theme tokens from a previously-exported file
+       (genui topbar Export HTML produces these). The file embeds a
+       JSON metadata block that this importer parses; the extracted
+       --xxx variables prefill the editor and apply live so the user
+       can Save them as a new theme. Hidden file input + visible button
+       so the styling matches the rest of the toolbar. -->
+  <button type="button" id="btn-download-template" class="secondary" title="Download the active theme as a 3-file template (theme.css + theme.json + theme-preview.html). Edit theme.css in any editor, then re-import here.">Download template</button>
+  <input type="file" id="import-html-file" accept=".html,.htm,text/html,.css,.json,application/json" multiple style="display:none;">
+  <button type="button" id="btn-import-html" class="secondary" title="Import one or more theme files (.css / .json / .html). Multiple files are merged in selection order — later files win on conflicts.">Import theme</button>
   <!-- Unsaved-changes indicator. Appears the moment any editor input
        changes a CSS variable, hides again on Save / Discard / dropdown
        change. The pill makes it explicit that edits are live-previewed
@@ -510,20 +735,38 @@
               <span id="editor-scope-hint" class="editor-scope-hint" aria-live="polite"></span>
             </span>
           </button>
-          <span style="color:var(--text-3);font-size:12px;white-space:nowrap;">live preview · save as custom</span>
           <button type="button" id="btn-show-all-vars" class="secondary" style="font-size:12px;padding:6px 12px;display:none;white-space:nowrap;">모든 변수 보기</button>
         </header>
         <div class="editor-body" id="editor-body"></div>
       </div>
     </div>
 
-    <!-- RIGHT — Live preview of every themed card. Updates in real-time
-         as the editor changes :root variables. -->
+    <!-- RIGHT — Live preview. Two modes:
+         (1) Cards: every themed card rendered separately (existing)
+         (2) Screen: a phone frame with multiple cards composed using
+             the theme's screen-padding / gap / grid tokens. Lets the
+             designer feel composition rules, not just card styling. -->
     <div class="preview-col" id="preview-col">
-      <h2 style="font-size:14px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:0.5px;margin:0 0 16px;">Live preview · all themed cards</h2>
+      <div class="preview-mode-toggle" id="preview-mode-toggle" role="tablist" aria-label="Preview mode">
+        <button type="button" class="preview-mode-btn active" data-mode="cards" aria-selected="true">Cards</button>
+        <button type="button" class="preview-mode-btn" data-mode="screen" aria-selected="false">Screen</button>
+      </div>
+      <h2 id="preview-mode-title" style="font-size:14px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:0.5px;margin:12px 0 16px;">Live preview · all themed cards</h2>
       <!-- Theme tokens apply here only — left editor / header / toolbar stay on fixed chrome vars. -->
       <div class="preview-theme-scope" id="preview-theme-scope">
         <div class="preview-grid" id="preview-grid"></div>
+        <div class="preview-screen-wrap" id="preview-screen-wrap" style="display:none;">
+          <div class="preview-screen-grid" id="preview-screen-grid">
+            <!-- 6 S26-ratio phones populated by renderScreenPreview().
+                 Each shows a different scenario (cooking / weather /
+                 calendar / messages / navigation / search) so the
+                 designer sees the theme across types at one glance. -->
+          </div>
+          <div class="preview-screen-hint">
+            6 scenarios · S26 aspect (19.5:9) · uses your
+            <code>--screen-padding-*</code>, <code>--gap-screen</code>, <code>--gap-cards</code>, <code>--screen-grid-columns</code> tokens.
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -633,6 +876,12 @@ const PREVIEW_CARDS = [
     variant: { actions: [{ label: 'Save', icon: 'bookmark', kind: 'primary' }, { label: 'Share', icon: 'share' }, { label: 'Edit', icon: 'edit' }] }
   },
   {
+    name: 'Action chips (gallery demo)',
+    editSections: ['Page', 'Card globals'],
+    role: 'action-row',
+    variant: { previewGallery: true }
+  },
+  {
     name: 'Quick toggles',
     editSections: ['Page', 'Card globals'],
     role: 'toggle-chip',
@@ -655,7 +904,8 @@ function previewRectForCard(card) {
   if (role === 'now-bar') return { w: 248, h: 64, scale: TOOLKIT_PREVIEW_SCALE };
   if (role === 'notif-card' || role === 'notif-card-ai') return { w: 415, h: 86, scale: TOOLKIT_PREVIEW_SCALE };
   if (role === 'toggle-chip') return { w: 408, h: 88, scale: TOOLKIT_PREVIEW_SCALE };
-  if (role === 'action-row') return { w: 415, h: 345, scale: TOOLKIT_PREVIEW_SCALE };
+  if (role === 'action-row' && variant.previewGallery) return { w: 415, h: 345, scale: TOOLKIT_PREVIEW_SCALE };
+  if (role === 'action-row') return { w: 408, h: 96, scale: TOOLKIT_PREVIEW_SCALE };
   if (role === 'focus-block' && variant.kind === 'weather') return { w: 415, h: 218, scale: TOOLKIT_PREVIEW_SCALE };
   if (role === 'focus-block' && variant.kind === 'calendar') return { w: 300, h: 128, scale: TOOLKIT_PREVIEW_SCALE };
   if (role === 'focus-block' && variant.kind === 'input') return { w: 300, h: 124, scale: TOOLKIT_PREVIEW_SCALE };
@@ -676,13 +926,61 @@ function previewRectForCard(card) {
 // ---------------------------------------------------------------------------
 const THEME_EDIT_SCHEMA = [
   {
+    section: 'Typography',
+    vars: [
+      { key: '--font-family-display',  label: 'Display family',   type: 'text' },
+      { key: '--font-family-body',     label: 'Body family',      type: 'text' },
+      { key: '--font-family-mono',     label: 'Mono family',      type: 'text' },
+      { key: '--font-size-xs',         label: 'Size · xs',        type: 'size', min: 8,  max: 18, step: 1 },
+      { key: '--font-size-sm',         label: 'Size · sm',        type: 'size', min: 10, max: 22, step: 1 },
+      { key: '--font-size-md',         label: 'Size · md',        type: 'size', min: 12, max: 28, step: 1 },
+      { key: '--font-size-lg',         label: 'Size · lg',        type: 'size', min: 14, max: 34, step: 1 },
+      { key: '--font-size-xl',         label: 'Size · xl',        type: 'size', min: 18, max: 48, step: 1 },
+      { key: '--font-size-display',    label: 'Size · display',   type: 'size', min: 24, max: 80, step: 1 },
+      { key: '--font-weight-regular',  label: 'Weight · regular', type: 'weight' },
+      { key: '--font-weight-medium',   label: 'Weight · medium',  type: 'weight' },
+      { key: '--font-weight-semibold', label: 'Weight · semibold',type: 'weight' },
+      { key: '--font-weight-bold',     label: 'Weight · bold',    type: 'weight' },
+      { key: '--letter-spacing-tight', label: 'Letter spacing · tight',  type: 'text' },
+      { key: '--letter-spacing-normal',label: 'Letter spacing · normal', type: 'text' },
+      { key: '--letter-spacing-wide',  label: 'Letter spacing · wide',   type: 'text' },
+      { key: '--line-height-tight',    label: 'Line height · tight',     type: 'text' },
+      { key: '--line-height-normal',   label: 'Line height · normal',    type: 'text' },
+      { key: '--line-height-relaxed',  label: 'Line height · relaxed',   type: 'text' }
+    ]
+  },
+  {
+    section: 'Spacing scale',
+    vars: [
+      { key: '--space-xxs', label: 'xxs', type: 'size', min: 0, max: 12, step: 1 },
+      { key: '--space-xs',  label: 'xs',  type: 'size', min: 0, max: 16, step: 1 },
+      { key: '--space-sm',  label: 'sm',  type: 'size', min: 0, max: 20, step: 1 },
+      { key: '--space-md',  label: 'md',  type: 'size', min: 4, max: 28, step: 1 },
+      { key: '--space-lg',  label: 'lg',  type: 'size', min: 8, max: 40, step: 1 },
+      { key: '--space-xl',  label: 'xl',  type: 'size', min: 12,max: 64, step: 1 }
+    ]
+  },
+  {
+    section: 'Composition (screen-level)',
+    vars: [
+      { key: '--screen-padding-v',     label: 'Screen padding · vertical',   type: 'size', min: 0, max: 48, step: 1 },
+      { key: '--screen-padding-h',     label: 'Screen padding · horizontal', type: 'size', min: 0, max: 48, step: 1 },
+      { key: '--gap-screen',           label: 'Gap · between groups',         type: 'size', min: 0, max: 48, step: 1 },
+      { key: '--gap-cards',            label: 'Gap · between cards',          type: 'size', min: 0, max: 32, step: 1 },
+      { key: '--container-margin-bottom', label: 'Container · bottom margin', type: 'size', min: 0, max: 32, step: 1 },
+      { key: '--screen-grid-columns',  label: 'Grid columns (1/2/3 or "1fr 2fr")', type: 'text' },
+      { key: '--screen-grid-gap',      label: 'Grid gap',                     type: 'size', min: 0, max: 32, step: 1 }
+    ]
+  },
+  {
     section: 'Page',
     vars: [
       { key: '--page-bg',          label: 'Background',     type: 'color' },
       { key: '--text-primary',     label: 'Text · primary', type: 'color' },
       { key: '--text-secondary',   label: 'Text · secondary (rgba)', type: 'color-rgba' },
       { key: '--text-tertiary',    label: 'Text · tertiary (rgba)',  type: 'color-rgba' },
-      { key: '--accent-primary',   label: 'Accent · primary', type: 'color' }
+      { key: '--accent-primary',   label: 'Accent · primary (filled)', type: 'color' },
+      { key: '--accent-on-primary',label: 'Text on filled accent', type: 'color' }
     ]
   },
   {
@@ -772,7 +1070,7 @@ let INSPECTOR_DOM_PATH = null;
 /** Per preview-cell index: CSS var overrides applied only on that cell (not :root), so edits while a card is selected do not recolor the whole page. */
 let PREVIEW_CELL_VAR_OVERRIDES = {};
 
-var _PAGE_EDIT_KEYS = ['--page-bg', '--text-primary', '--text-secondary', '--text-tertiary', '--accent-primary'];
+var _PAGE_EDIT_KEYS = ['--page-bg', '--text-primary', '--text-secondary', '--text-tertiary', '--accent-primary', '--accent-on-primary'];
 var _CARD_GLOBAL_KEYS = ['--card-radius', '--card-padding-v', '--card-padding-h', '--card-gap'];
 var _SURFACE_THEME_KEYS = [
   '--oneui-theme-style',
@@ -794,6 +1092,15 @@ var _SURFACE_THEME_KEYS = [
   '--qs-chip-off-bg',
   '--qs-chip-icon-on',
   '--qs-chip-icon-off',
+  '--flat-toggle-grid-shell-bg',
+  '--flat-toggle-grid-border',
+  '--flat-toggle-grid-chip-on-bg',
+  '--flat-toggle-grid-chip-off-bg',
+  '--flat-toggle-grid-chip-icon-on',
+  '--flat-toggle-grid-chip-icon-off',
+  '--flat-toggle-grid-text',
+  '--flat-toggle-grid-text-secondary',
+  '--accent-on-primary',
   '--qs-fallback-toggle-on-bg',
   '--qs-fallback-toggle-off-bg',
   '--nowbar-charging-track-bg',
@@ -803,9 +1110,8 @@ var _SURFACE_THEME_KEYS = [
   '--oneui-chroma'
 ];
 var FLAT_SCHEME = 'dark';
-var FLAT_ACCENT = '#0381FE';
+var FLAT_ACCENT = '#a3a3a8';
 var FLAT_ACCENT_KEYS = [
-  '--accent-primary',
   '--card-weather-accent',
   '--card-calendar-accent',
   '--card-reminder-accent',
@@ -815,22 +1121,52 @@ var FLAT_ACCENT_KEYS = [
 ];
 var FLAT_SCHEME_VARS = {
   dark: {
-    '--text-primary': '#f2f2f4',
+    '--page-bg': '#000000',
+    '--text-primary': '#efeef2',
     '--text-secondary': 'rgba(242,242,244,0.68)',
     '--text-tertiary': 'rgba(242,242,244,0.44)',
-    '--surface-bg': 'rgba(23,23,26,0.80)',
-    '--surface-border': '1px solid rgba(255,255,255,0.06)',
-    '--card-ai-grad': 'rgba(23,23,26,0.80)',
-    '--card-nav-arrow-bg': 'rgba(3,129,254,0.22)'
+    '--accent-primary': '#ffffff',
+    '--accent-on-primary': '#0d0d0f',
+    '--surface-bg': '#1e1e22',
+    '--surface-border': 'none',
+    '--surface-filter': 'none',
+    '--card-ai-grad': '#1e1e22',
+    '--card-nav-arrow-bg': 'rgba(255,255,255,0.14)',
+    '--qs-tile-bg': '#26262b',
+    '--qs-chip-on-bg': '#ffffff',
+    '--qs-chip-off-bg': 'rgba(255,255,255,0.14)',
+    '--qs-chip-icon-on': '#0d0d0f',
+    '--qs-chip-icon-off': '#f2f2f5',
+    '--flat-toggle-grid-shell-bg': '#e8e8ec',
+    '--flat-toggle-grid-chip-on-bg': '#0d0d0f',
+    '--flat-toggle-grid-chip-off-bg': 'rgba(13,13,15,0.08)',
+    '--flat-toggle-grid-chip-icon-on': '#f5f5f7',
+    '--flat-toggle-grid-chip-icon-off': 'rgba(13,13,15,0.55)'
   },
   light: {
+    '--page-bg': '#f7f7f9',
     '--text-primary': '#0a0a0c',
     '--text-secondary': 'rgba(10,10,12,0.68)',
     '--text-tertiary': 'rgba(10,10,12,0.44)',
-    '--surface-bg': 'rgba(255,255,255,0.80)',
-    '--surface-border': '1px solid rgba(0,0,0,0.08)',
-    '--card-ai-grad': 'rgba(255,255,255,0.80)',
-    '--card-nav-arrow-bg': 'rgba(3,129,254,0.18)'
+    '--accent-primary': '#0d0d0f',
+    '--accent-on-primary': '#ffffff',
+    '--surface-bg': '#f5f5f7',
+    '--surface-border': 'none',
+    '--surface-filter': 'none',
+    '--card-ai-grad': '#f0f0f3',
+    '--card-nav-arrow-bg': 'rgba(0,0,0,0.08)',
+    '--qs-tile-bg': '#eaeaf0',
+    '--qs-chip-on-bg': '#0d0d0f',
+    '--qs-chip-off-bg': 'rgba(13,13,15,0.08)',
+    '--qs-chip-icon-on': '#fafafa',
+    '--qs-chip-icon-off': 'rgba(13,13,15,0.55)',
+    '--flat-toggle-grid-shell-bg': '#1e1e22',
+    '--flat-toggle-grid-chip-on-bg': '#ffffff',
+    '--flat-toggle-grid-chip-off-bg': 'rgba(255,255,255,0.14)',
+    '--flat-toggle-grid-chip-icon-on': '#0d0d0f',
+    '--flat-toggle-grid-chip-icon-off': '#efeef2',
+    '--flat-toggle-grid-text': '#efeef2',
+    '--flat-toggle-grid-text-secondary': 'rgba(239,238,242,0.65)'
   }
 };
 
@@ -978,6 +1314,16 @@ function _resolveInspectorLayer(card, target, stageRoot) {
   return null;
 }
 
+// Cross-cutting sections that affect EVERY card type (typography,
+// spacing scale, screen-level composition). When the inspector
+// filter is active, these sections still show in full so the
+// designer can adjust globals without dropping the focus filter.
+var ALWAYS_VISIBLE_SECTIONS = [
+  'Typography',
+  'Spacing scale',
+  'Composition (screen-level)'
+];
+
 function getActiveEditorSections() {
   var sections = getFilteredSchema();
   if (!INSPECTOR_LAYER || !INSPECTOR_LAYER.keys || !INSPECTOR_LAYER.keys.length) return sections;
@@ -985,10 +1331,54 @@ function getActiveEditorSections() {
   INSPECTOR_LAYER.keys.forEach(function (k) { allow[k] = 1; });
   var out = [];
   sections.forEach(function (sec) {
+    if (ALWAYS_VISIBLE_SECTIONS.indexOf(sec.section) >= 0) {
+      // Pass through unfiltered — these are cross-cutting tokens.
+      out.push(sec);
+      return;
+    }
     var vs = sec.vars.filter(function (v) { return allow[v.key]; });
     if (vs.length) out.push({ section: sec.section, vars: vs });
   });
   return out.length ? out : sections;
+}
+
+// Activate the editor focus by card kind (e.g. 'fb-weather'). Picks
+// the broadest layer for that kind ("Card shell") so the user gets
+// every variable that touches the card, not just one subzone. Used
+// by the Screen-mode preview's card-click handler. Pass null to
+// clear the focus.
+function setInspectorByKind(kindKey, label) {
+  if (kindKey == null) {
+    INSPECTOR_LAYER = null;
+    INSPECTOR_DOM_PATH = null;
+    SELECTED_PREVIEW_INDEX = null;
+    buildEditorBody();
+    renderPreviewGrid();
+    return;
+  }
+  var layers = _INSPECTOR_LAYERS[kindKey] || _INSPECTOR_LAYERS.generic;
+  // The last layer in each kind's list is the broadest ("Card shell" /
+  // "Page & cards"). It captures all card-type-specific keys plus the
+  // global card shell tokens — a sensible "show me everything that
+  // matters for this card type" default.
+  var broadest = layers[layers.length - 1];
+  INSPECTOR_LAYER = {
+    label: label || (kindKey + ' (full card)'),
+    keys:  broadest.keys.slice()
+  };
+  buildEditorBody();
+}
+
+// Map a Screen-preview spec ({role, variant}) to an inspector kind.
+function _inspectorKindForSpec(spec) {
+  if (!spec || !spec.role) return 'generic';
+  if (spec.role === 'focus-block' && spec.variant && spec.variant.kind) {
+    return 'fb-' + spec.variant.kind;
+  }
+  if (spec.role === 'now-bar' && spec.variant && spec.variant.type) {
+    return 'now-' + spec.variant.type;
+  }
+  return spec.role;   // 'action-row' / 'toggle-chip' / etc.
 }
 
 function _domPathFromStage(stage, target) {
@@ -1180,7 +1570,7 @@ function flatSchemeVars(scheme) {
   var base = Object.assign({
     '--oneui-theme-style': 'flat',
     '--surface-shadow': 'none',
-    '--surface-filter': 'blur(24px)',
+    '--surface-filter': 'none',
     '--surface-overlay': 'transparent',
     '--surface-overlay-opacity': '0',
     '--surface-bg-size': 'auto',
@@ -1224,7 +1614,288 @@ function updateFlatSchemeToggle() {
 // Render every preview card using window.renderAtomicForRole. Called once
 // at boot and whenever the theme changes (re-render is cheap; the same
 // renderer that the main app uses produces consistent output).
+// ---------------------------------------------------------------------------
+//  Screen-mode preview — 3×2 grid of S26-ratio phones, each showing a
+//  DIFFERENT scenario composed with the active theme's tokens. Every
+//  slider tweak (font, gap, padding, columns) re-renders all six in
+//  unison so the designer sees their work across screen types at once.
+//
+//  Each scenario is a list of "groups", each group is { label, role,
+//  variant, gridable? }. gridable groups respect the --screen-grid-
+//  columns token; non-gridable always stack vertically (e.g. action
+//  rows look bad in a 2-col grid).
+// ---------------------------------------------------------------------------
+const SCREEN_PREVIEW_SCENARIOS = [
+  {
+    label: 'Glance',
+    header: 'Today',
+    primary: [
+      { role: 'focus-block', variant: { kind: 'weather', temp: '23°', condition: 'Partly cloudy', location: 'Seoul', feels: '21°', icon: 'cloud-sun' } },
+      { role: 'focus-block', variant: { kind: 'calendar', section: 'NEXT UP · TODAY', time: '9:30 AM', duration: '30 min', title: 'Team stand-up', location: 'Studio A' } }
+    ],
+    primaryGridable: true,
+    secondary: [
+      { role: 'focus-block', variant: { kind: 'reminder', task: 'Review proposal', due: '5 PM', count: '3', section: 'TODAY · 3 ITEMS' } }
+    ]
+  },
+  {
+    label: 'Cooking',
+    header: 'Cooking Assistant',
+    primary: [
+      { role: 'focus-block', variant: { kind: 'reminder', task: 'Sauté kimchi 3 min', due: 'Step 3 of 7', count: '7', section: 'NEXT STEP' } }
+    ],
+    primaryGridable: false,
+    secondary: [
+      { role: 'focus-block', variant: { kind: 'input', section: 'STEP 3 OF 7', topic: 'Sauté kimchi 3 min', detail: 'then add cold rice', facets: [] } },
+      { role: 'action-row',  variant: { actions: [{ label: 'Done' }, { label: 'Repeat' }, { label: 'Next' }] } }
+    ]
+  },
+  {
+    label: 'Calendar',
+    header: 'Schedule',
+    primary: [
+      { role: 'focus-block', variant: { kind: 'calendar', section: 'TUE · 9:30', time: '9:30 AM', duration: '30 min', title: 'Stand-up', location: 'Studio A' } },
+      { role: 'focus-block', variant: { kind: 'calendar', section: 'TUE · 11:00', time: '11:00 AM', duration: '60 min', title: 'Design review', location: 'Room 4' } }
+    ],
+    primaryGridable: true,
+    secondary: [
+      { role: 'focus-block', variant: { kind: 'calendar', section: 'TUE · 14:00', time: '2:00 PM', duration: '45 min', title: 'Coffee · Sarah', location: 'Cafe Bene' } }
+    ]
+  },
+  {
+    label: 'Messages',
+    header: 'Messages',
+    primary: [
+      { role: 'focus-block', variant: { kind: 'message', sender: 'Sarah', preview: 'Running 10 min late — see you at coffee', section: 'MESSAGES · 2 NEW' } },
+      { role: 'focus-block', variant: { kind: 'message', sender: 'Mom', preview: 'Got the package today — thanks!', section: '' } }
+    ],
+    primaryGridable: false,
+    secondary: [
+      { role: 'action-row', variant: { actions: [{ label: 'Reply' }, { label: 'Mark read' }, { label: 'Mute' }] } }
+    ]
+  },
+  {
+    label: 'Navigation',
+    header: 'Driving',
+    primary: [
+      { role: 'now-bar', variant: { type: 'navigation', distance: '200 m', instruction: 'Turn right onto Hangang-daero', eta: '8 min' } }
+    ],
+    primaryGridable: false,
+    secondary: [
+      { role: 'focus-block', variant: { kind: 'eta', label: 'ARRIVAL', value: '15:24', subtext: '12 min · Hangang Bridge', icon: 'navigation' } },
+      { role: 'action-row',  variant: { actions: [{ label: 'Reroute' }, { label: 'Stop' }, { label: 'Voice' }] } }
+    ]
+  },
+  {
+    label: 'Search',
+    header: 'Search',
+    primary: [
+      { role: 'focus-block', variant: { kind: 'input', section: 'SEARCH · COFFEE SHOPS', topic: 'Found 12 nearby', detail: '', facets: ['Vegetarian', '< 1 km', 'Open now'] } }
+    ],
+    primaryGridable: false,
+    secondary: [
+      { role: 'focus-block', variant: { kind: 'reminder', task: 'Cafe Bene · Hapjeong', due: '0.4 km', count: '4.6★', section: 'TOP RESULT' } },
+      { role: 'action-row',  variant: { actions: [{ label: 'Open' }, { label: 'Save' }, { label: 'Call' }] } }
+    ]
+  }
+];
+
+// Map screen-preview spec → matching THEME_EDIT_SCHEMA section name.
+// Used both by the right-pane card label (so the badge above the
+// matching cards reads "Navigation now-bar" not "navigation") AND
+// by the left-pane section-heading highlighter (so we can mark the
+// section that's currently focused with the same blue accent).
+const _SECTION_FOR_KIND = {
+  'fb-weather':    'Weather card',
+  'fb-calendar':   'Calendar card',
+  'fb-reminder':   'Reminder card',
+  'fb-message':    'Message card',
+  'fb-eta':        'ETA card',
+  'fb-input':      'Input summary card',
+  'now-navigation':'Navigation now-bar',
+  'now-media':     'Now playing',
+  'now-timer':     'Timer',
+  'now-charging':  'Battery / charging',
+  'notif-ai':      'AI notification',
+  'action-row':    'Card globals',
+  'toggle-chip':   'Card globals',
+  'generic':       'Card globals'
+};
+
+function _kindReadableName(spec) {
+  if (!spec) return '';
+  const kind = _inspectorKindForSpec(spec);
+  const sectionName = _SECTION_FOR_KIND[kind];
+  if (sectionName) return sectionName;
+  if (spec.role) return String(spec.role).replace(/[-_]/g, ' ');
+  return 'card';
+}
+
+// Resolve the schema section name that goes with the currently
+// active inspector filter, so buildEditorBody can mark its heading
+// with the .is-active-section class for the blue highlight.
+function _activeSectionName() {
+  if (!INSPECTOR_LAYER) return null;
+  const k = INSPECTOR_LAYER._screenKind;
+  if (k && _SECTION_FOR_KIND[k]) return _SECTION_FOR_KIND[k];
+  return null;
+}
+
+function _renderAtomicCard(spec) {
+  if (!spec || typeof window.renderAtomicForRole !== 'function') return null;
+  const html = window.renderAtomicForRole({ role: spec.role, variant: spec.variant }, { x: 0, y: 0, w: 360, h: 120 });
+  const inner = document.createElement('div');
+  inner.innerHTML = html;
+  const atomic = inner.firstElementChild || inner;
+
+  // Wrap the atomic so we can overlay an invisible-by-default kind
+  // label that turns blue when the editor focus matches this card's
+  // kind. Click handler lives on the wrap so the entire card surface
+  // is clickable.
+  const wrap = document.createElement('div');
+  wrap.className = 'preview-card-wrap';
+  wrap.style.cursor = 'pointer';
+  wrap.dataset.previewKind = _inspectorKindForSpec(spec);
+  wrap.appendChild(atomic);
+
+  const label = document.createElement('span');
+  label.className = 'preview-card-kind-label';
+  label.textContent = _kindReadableName(spec);
+  wrap.appendChild(label);
+
+  wrap.addEventListener('click', function (e) {
+    e.stopPropagation();
+    var kind = wrap.dataset.previewKind;
+    var displayLabel = _kindReadableName(spec) + ' · click anywhere off card to clear';
+    if (INSPECTOR_LAYER && INSPECTOR_LAYER._screenKind === kind) {
+      // Toggle off if clicking the same kind again.
+      setInspectorByKind(null);
+    } else {
+      setInspectorByKind(kind, displayLabel);
+      if (INSPECTOR_LAYER) INSPECTOR_LAYER._screenKind = kind;
+    }
+    _highlightActiveScreenCards();
+  });
+  return wrap;
+}
+
+// Show the per-card kind label in blue on every wrap whose kind
+// matches the active editor focus. Other cards stay invisible. The
+// CSS handles the actual color / visibility transition; this just
+// flips data-active on the wrappers.
+function _highlightActiveScreenCards() {
+  var grid = document.getElementById('preview-screen-grid');
+  if (!grid) return;
+  var activeKind = (INSPECTOR_LAYER && INSPECTOR_LAYER._screenKind) || null;
+  grid.querySelectorAll('.preview-card-wrap[data-preview-kind]').forEach(function (el) {
+    var match = activeKind && el.dataset.previewKind === activeKind;
+    el.dataset.active = match ? 'true' : 'false';
+  });
+}
+
+function _buildScenarioPhone(scenario, gridCols) {
+  const phone = document.createElement('div');
+  phone.className = 'preview-phone-frame';
+
+  const labelEl = document.createElement('div');
+  labelEl.className = 'preview-phone-label';
+  labelEl.textContent = scenario.label;
+  phone.appendChild(labelEl);
+
+  const canvas = document.createElement('div');
+  canvas.className = 'preview-phone-canvas';
+
+  // Status bar line + header text.
+  const chrome = document.createElement('div');
+  chrome.className = 'preview-screen-chrome';
+  chrome.innerHTML = '<span>9:41</span><span>· · · ·</span>';
+  canvas.appendChild(chrome);
+
+  if (scenario.header) {
+    const header = document.createElement('div');
+    header.className = 'preview-screen-header';
+    header.textContent = scenario.header;
+    canvas.appendChild(header);
+  }
+
+  // Primary group — respects gridCols if scenario allows it.
+  if (Array.isArray(scenario.primary) && scenario.primary.length) {
+    const primary = document.createElement('div');
+    const useGrid = scenario.primaryGridable && gridCols !== '1' && gridCols !== '';
+    primary.className = 'preview-screen-group' + (useGrid ? ' is-grid' : '');
+    if (useGrid && /\bfr\b/.test(gridCols)) primary.style.gridTemplateColumns = gridCols;
+    scenario.primary.forEach(spec => {
+      const el = _renderAtomicCard(spec);
+      if (el) primary.appendChild(el);
+    });
+    canvas.appendChild(primary);
+  }
+
+  // Secondary group — always stacks vertically.
+  if (Array.isArray(scenario.secondary) && scenario.secondary.length) {
+    const secondary = document.createElement('div');
+    secondary.className = 'preview-screen-group';
+    scenario.secondary.forEach(spec => {
+      const el = _renderAtomicCard(spec);
+      if (el) secondary.appendChild(el);
+    });
+    canvas.appendChild(secondary);
+  }
+
+  phone.appendChild(canvas);
+  return phone;
+}
+
+function renderScreenPreview() {
+  const grid = document.getElementById('preview-screen-grid');
+  if (!grid) return;
+  if (typeof window.renderAtomicForRole !== 'function') {
+    grid.innerHTML = '<div style="color:var(--text-3);padding:24px;font-size:12px;text-align:center;grid-column:1/-1;">renderer not yet ready</div>';
+    return;
+  }
+  const cols = (getComputedStyle(document.documentElement).getPropertyValue('--screen-grid-columns') || '1').trim();
+  grid.innerHTML = '';
+  SCREEN_PREVIEW_SCENARIOS.forEach(scenario => {
+    grid.appendChild(_buildScenarioPhone(scenario, cols));
+  });
+  // Click on the grid background (between phones) clears the focus.
+  grid.addEventListener('click', function (e) {
+    if (e.target === grid) setInspectorByKind(null);
+  }, { once: false });
+  // Restore highlight if a filter is already active (e.g. after re-render).
+  _highlightActiveScreenCards();
+}
+
+// Mode switching: toggle visibility of preview-grid vs preview-screen-wrap.
+let PREVIEW_MODE = 'cards';
+function setPreviewMode(mode) {
+  PREVIEW_MODE = mode === 'screen' ? 'screen' : 'cards';
+  const grid = document.getElementById('preview-grid');
+  const screen = document.getElementById('preview-screen-wrap');
+  const title = document.getElementById('preview-mode-title');
+  if (grid)   grid.style.display   = (PREVIEW_MODE === 'cards')  ? '' : 'none';
+  if (screen) screen.style.display = (PREVIEW_MODE === 'screen') ? '' : 'none';
+  if (title)  title.textContent    = (PREVIEW_MODE === 'cards')
+    ? 'Live preview · all themed cards'
+    : 'Live preview · screen composition';
+  // Sync button states.
+  document.querySelectorAll('.preview-mode-btn').forEach(btn => {
+    const isActive = btn.dataset.mode === PREVIEW_MODE;
+    btn.classList.toggle('active', isActive);
+    btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
+  });
+  if (PREVIEW_MODE === 'screen') renderScreenPreview();
+}
+(function _wirePreviewMode() {
+  document.querySelectorAll('.preview-mode-btn').forEach(btn => {
+    btn.addEventListener('click', () => setPreviewMode(btn.dataset.mode));
+  });
+})();
+
 function renderPreviewGrid() {
+  // When screen mode is active, also re-render the screen preview so
+  // a token edit shows up in the live phone frame.
+  if (PREVIEW_MODE === 'screen') renderScreenPreview();
   const grid = $('preview-grid');
   grid.innerHTML = '';
   const orderedPreviewCards = PREVIEW_CARDS
@@ -1510,8 +2181,23 @@ function buildEditorBody() {
   if (!body) { console.warn('[customize] editor-body element missing'); return; }
   try {
     var html = '';
+
+    // Active-filter chip — surfaces the click-to-focus state at the
+    // top of the editor so the designer always sees WHAT is being
+    // filtered and can restore the full schema with one click.
+    if (INSPECTOR_LAYER && INSPECTOR_LAYER.label) {
+      html += '<div class="editor-filter-chip" style="display:flex;align-items:center;gap:8px;padding:8px 10px;margin:0 0 12px;border-radius:10px;background:rgba(3,129,254,0.10);border:1px solid rgba(3,129,254,0.30);color:var(--primary);font-size:12px;">';
+      html += '<span style="font-weight:700;">Focused:</span>';
+      html += '<span style="opacity:0.85;">' + _esc(INSPECTOR_LAYER.label) + '</span>';
+      html += '<span style="flex:1;"></span>';
+      html += '<button type="button" id="btn-clear-focus" class="secondary" style="font-size:11px;padding:4px 10px;">Show all</button>';
+      html += '</div>';
+    }
+
+    var activeSectionName = _activeSectionName();
     getActiveEditorSections().forEach(function (section, secIdx) {
-      html += '<div class="editor-section">';
+      var isActive = activeSectionName && section.section === activeSectionName;
+      html += '<div class="editor-section' + (isActive ? ' is-active-section' : '') + '">';
       html += '<button type="button" class="editor-section-toggle" aria-expanded="true" aria-controls="editor-sec-body-' + secIdx + '">';
       html += '<span class="editor-section-toggle-label">' + _esc(section.section) + '</span>';
       html += '<span class="editor-section-chev" aria-hidden="true">\u25be</span></button>';
@@ -1716,6 +2402,324 @@ function discardChanges() {
   _markUnsaved(false);
 }
 
+// ---------------------------------------------------------------------------
+//  Download template — 3-file starter pack (css + json + preview html)
+//
+//  Designers click this once, get a working baseline of the currently
+//  active theme as three separate files. They edit `theme.css` in any
+//  editor (VS Code, Cursor, etc.), optionally drop `theme-preview.html`
+//  into a browser to preview, then re-upload `theme.css` (or `.json` /
+//  `.html`) via Import HTML to round-trip back into the customizer.
+//
+//  We download three files in sequence (no JSZip dependency). Modern
+//  browsers prompt "allow this site to download multiple files" the
+//  first time and remember the choice.
+// ---------------------------------------------------------------------------
+function downloadThemeTemplate() {
+  const themeId = $('theme-select').value;
+  const theme = THEMES.find(t => t.id === themeId);
+  if (!theme) { showToast('Pick a theme first'); return; }
+
+  // Read every editable variable's current value (computed) so any
+  // unsaved tweaks the designer made get baked into the template.
+  const computed = getComputedStyle(document.documentElement);
+  const themeVars = {};
+  THEME_EDIT_SCHEMA.forEach(section => {
+    section.vars.forEach(v => {
+      const val = (computed.getPropertyValue(v.key) || '').trim();
+      if (val) themeVars[v.key] = val;
+    });
+  });
+
+  // (1) theme.css — annotated, designer-friendly. Sections grouped
+  //     and labeled so a designer scanning the file sees the structure.
+  let css = '/*!\n';
+  css += ' * ' + (theme.name || 'Theme template') + ' — One UI GenUI theme\n';
+  css += ' * Base: ' + (theme.id || 'unknown') + ' · Exported: ' + new Date().toISOString() + '\n';
+  css += ' *\n';
+  css += ' * Edit any --variable below. Save as theme.css and re-import\n';
+  css += ' * via /customize → Import HTML to register a new theme.\n';
+  css += ' *\n';
+  css += ' * Optional metadata (parsed by the importer):\n';
+  css += ' *   oneui-theme: { "name": "My Theme", "author": "you", "baseThemeId": "' + (theme.id || '') + '" }\n';
+  css += ' */\n\n';
+  css += ':root {\n';
+  THEME_EDIT_SCHEMA.forEach((section, secIdx) => {
+    if (secIdx > 0) css += '\n';
+    css += '  /* ── ' + section.section + ' ── */\n';
+    section.vars.forEach(v => {
+      const val = themeVars[v.key] || '';
+      if (val) css += '  ' + v.key + ': ' + val + ';\n';
+    });
+  });
+  css += '}\n';
+
+  // (2) theme.json — machine-readable counterpart. Same vars, plus
+  //     metadata. The importer reads this directly when present.
+  const meta = {
+    schema:        'oneui.export/v1',
+    exportedAt:    new Date().toISOString(),
+    name:          theme.name || 'My Theme',
+    baseThemeId:   theme.id || null,
+    description:   theme.description || '',
+    themeVars:     themeVars
+  };
+  const json = JSON.stringify(meta, null, 2);
+
+  // (3) theme-preview.html — drop the file pair into any folder and
+  //     open this HTML in a browser to see the cards rendered with
+  //     the current CSS values. Self-contained except for theme.css.
+  const html = '<!DOCTYPE html>\n' +
+    '<html lang="en"><head>\n' +
+    '<meta charset="UTF-8">\n' +
+    '<meta name="viewport" content="width=device-width, initial-scale=1.0">\n' +
+    '<title>' + _esc(theme.name || 'Theme preview') + ' — preview</title>\n' +
+    '<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">\n' +
+    '<link rel="stylesheet" href="theme.css">\n' +
+    '<style>\n' +
+    '  body { margin:0; padding:24px; background: var(--page-bg, #0a0a0c); color: var(--text-primary, #efeef2); font-family: var(--font-family-body, "Inter", sans-serif); line-height: var(--line-height-normal, 1.45); }\n' +
+    '  .container { max-width: 480px; margin: 0 auto; padding: var(--screen-padding-v, 16px) var(--screen-padding-h, 14px); display:flex; flex-direction:column; gap: var(--gap-screen, 16px); }\n' +
+    '  h1 { font-family: var(--font-family-display, "Inter", sans-serif); font-size: var(--font-size-display, 32px); font-weight: var(--font-weight-bold, 700); letter-spacing: var(--letter-spacing-tight, -0.5px); margin: 0 0 8px; }\n' +
+    '  p { color: var(--text-secondary, rgba(239,238,242,0.7)); font-size: var(--font-size-md, 15px); margin: 0 0 16px; }\n' +
+    '  .group { display:flex; flex-direction:column; gap: var(--gap-cards, 12px); }\n' +
+    '  .card { background: rgba(255,255,255,0.06); border-radius: var(--card-radius, 24px); padding: var(--card-padding-v, 14px) var(--card-padding-h, 16px); display:flex; align-items:center; gap: var(--card-gap, 6px); }\n' +
+    '  .card .accent { width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0; }\n' +
+    '  .card .body { display:flex; flex-direction:column; gap: 2px; }\n' +
+    '  .card .label { font-size: var(--font-size-xs, 11px); font-weight: var(--font-weight-semibold, 600); letter-spacing: var(--letter-spacing-wide, 0.5px); text-transform: uppercase; color: var(--text-tertiary, rgba(239,238,242,0.45)); }\n' +
+    '  .card .value { font-size: var(--font-size-lg, 18px); font-weight: var(--font-weight-semibold, 600); color: var(--text-primary, #efeef2); }\n' +
+    '  .accent-weather { background: var(--card-weather-accent, #FBBF24); }\n' +
+    '  .accent-calendar { background: var(--card-calendar-accent, #A78BFA); }\n' +
+    '  .accent-reminder { background: var(--card-reminder-accent, #F59E0B); }\n' +
+    '  .accent-eta { background: var(--card-eta-accent, #14B8A6); }\n' +
+    '  .accent-primary { background: var(--accent-primary, #0381FE); }\n' +
+    '</style>\n' +
+    '</head><body>\n' +
+    '<div class="container">\n' +
+    '  <div>\n' +
+    '    <h1>' + _esc(theme.name || 'Theme preview') + '</h1>\n' +
+    '    <p>Edit <code>theme.css</code> in any editor, refresh this page to preview, then re-import via <code>/customize</code>.</p>\n' +
+    '  </div>\n' +
+    '  <div class="group">\n' +
+    '    <div class="card"><div class="accent accent-weather"></div><div class="body"><div class="label">Weather</div><div class="value">23° · Partly cloudy</div></div></div>\n' +
+    '    <div class="card"><div class="accent accent-calendar"></div><div class="body"><div class="label">Next up · Today</div><div class="value">9:30 AM · Stand-up</div></div></div>\n' +
+    '    <div class="card"><div class="accent accent-reminder"></div><div class="body"><div class="label">Reminder</div><div class="value">Review proposal · 5 PM</div></div></div>\n' +
+    '    <div class="card"><div class="accent accent-eta"></div><div class="body"><div class="label">ETA</div><div class="value">15:24 · 12 min</div></div></div>\n' +
+    '    <div class="card"><div class="accent accent-primary"></div><div class="body"><div class="label">Accent · primary</div><div class="value">Tap targets · selection · CTAs</div></div></div>\n' +
+    '  </div>\n' +
+    '</div>\n' +
+    '</body></html>\n';
+
+  // Trigger three downloads with small staggered delays — browsers
+  // throttle "burst" downloads from one user gesture but accept
+  // ~150ms-spaced ones reliably across Chrome / Safari / Firefox.
+  function _trigger(name, content, mime) {
+    const blob = new Blob([content], { type: mime + ';charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  }
+  _trigger('theme.css',          css,  'text/css');
+  setTimeout(() => _trigger('theme.json',         json, 'application/json'), 180);
+  setTimeout(() => _trigger('theme-preview.html', html, 'text/html'),        360);
+
+  showToast('Downloaded · theme.css + theme.json + theme-preview.html');
+}
+
+// ---------------------------------------------------------------------------
+//  Import HTML — load theme from a self-contained export
+//
+//  The genui Export HTML button writes a file that embeds (a) all of
+//  css/genui.css inline, (b) the active <style id="theme-vars">
+//  block, (c) any unsaved inline overrides, and (d) a JSON metadata
+//  comment of the form:
+//
+//    <!-- ONEUI_EXPORT_META:{"schema":"oneui.export/v1",...}:END -->
+//
+//  This handler reads the file as text, extracts that JSON block first
+//  (cheapest path), falls back to regex-scraping `:root { --xxx: …; }`
+//  if metadata is missing, applies each --xxx via _writeVar so the
+//  preview updates live, and marks the editor unsaved so a Save
+//  persists it as a brand-new theme.
+// ---------------------------------------------------------------------------
+// Parse a single file → its themeVars + a tag describing the source.
+// Pure function — does NOT touch :root or the editor. Caller (the
+// multi-file import handler) merges the maps and applies them.
+async function _parseThemeFile(file) {
+  if (!file) return { vars: {}, source: '(empty)', name: '(empty)' };
+  const MAX_BYTES = 4 * 1024 * 1024;
+  if (file.size > MAX_BYTES) {
+    return { vars: {}, source: 'skipped · too large', name: file.name, error: 'too large (' + Math.round(file.size / 1024) + ' KB)' };
+  }
+  let text = '';
+  try { text = await file.text(); }
+  catch (e) { return { vars: {}, source: 'skipped · read failure', name: file.name, error: e.message }; }
+
+  // Format detection — same handler accepts .html (full export with
+  // metadata comment), .css (just the theme vars), or .json (machine
+  // export from /customize → Download template). Detection is by
+  // extension first, then by content sniffing as a safety net.
+  const fname = (file.name || '').toLowerCase();
+  const looksJSON = fname.endsWith('.json') ||
+                    /^\s*\{[\s\S]*"themeVars"\s*:/m.test(text);
+  const looksCSS  = fname.endsWith('.css')  ||
+                    (/:root[^{]*\{/.test(text) && !/<!DOCTYPE|<html/i.test(text) && !looksJSON);
+
+  let themeVars = null;
+  let importedFrom = null;
+
+  // (1a) JSON path — parse the file as a metadata document directly.
+  if (looksJSON && !themeVars) {
+    try {
+      const meta = JSON.parse(text);
+      if (meta && meta.themeVars && typeof meta.themeVars === 'object') {
+        themeVars = meta.themeVars;
+        importedFrom = 'json · ' + (meta.name || meta.baseThemeId || 'theme.json');
+      }
+    } catch (e) {
+      console.warn('[import] JSON parse failed:', e.message);
+    }
+  }
+
+  // (1b) HTML metadata comment path — fast, structured.
+  if (!themeVars) {
+    const metaMatch = text.match(/<!--\s*ONEUI_EXPORT_META:([\s\S]*?):END\s*-->/);
+    if (metaMatch) {
+      try {
+        const meta = JSON.parse(metaMatch[1]);
+        if (meta && meta.themeVars && typeof meta.themeVars === 'object') {
+          themeVars = meta.themeVars;
+          importedFrom = 'metadata · ' + (meta.exportedAt || 'unknown date');
+        }
+      } catch (e) {
+        console.warn('[import] metadata JSON parse failed, falling back to CSS scan:', e.message);
+      }
+    }
+  }
+
+  // (1c) CSS comment metadata — designer-authored .css files MAY include
+  //   /*! oneui-theme: { "name": "...", "baseThemeId": "...", ... } */
+  //  We don't need it for the vars themselves but capture the name.
+  let cssMetaName = null;
+  if (looksCSS) {
+    const cssMeta = text.match(/oneui-theme\s*:\s*(\{[\s\S]*?\})/);
+    if (cssMeta) {
+      try { cssMetaName = JSON.parse(cssMeta[1]).name || null; }
+      catch (_) { /* optional, ignore */ }
+    }
+  }
+
+  // (2) Fallback: scrape every `:root { --xxx: VALUE; }` block. Works
+  // for raw CSS files AND for HTML exports lacking the metadata comment.
+  if (!themeVars) {
+    themeVars = {};
+    const rootBlockRe = /:root[^{]*\{([^}]*)\}/g;
+    let block;
+    while ((block = rootBlockRe.exec(text)) !== null) {
+      const varRe = /(--[a-z0-9-]+)\s*:\s*([^;]+);/gi;
+      let m;
+      while ((m = varRe.exec(block[1])) !== null) {
+        themeVars[m[1].trim()] = m[2].trim();
+      }
+    }
+    const sourceTag = looksCSS ? 'css' : 'html-scan';
+    importedFrom = sourceTag + (cssMetaName ? (' · ' + cssMetaName) : '') +
+                   ' · ' + Object.keys(themeVars).length + ' vars';
+  }
+
+  return { vars: themeVars || {}, source: importedFrom || '(unknown)', name: file.name };
+}
+
+// Top-level handler — accepts ONE OR MANY files, parses each, then
+// merges them in selection order (later files win on conflicts) and
+// applies the merged map in one pass. Designers can split their work
+// into multiple .css files (theme-base.css + theme-overrides.css) or
+// drop a {.css, .json, .html} bundle and have it merge cleanly.
+async function importThemeFiles(files) {
+  const list = Array.from(files || []);
+  if (list.length === 0) return;
+
+  const reports = [];
+  const merged = {};
+  for (const file of list) {
+    const r = await _parseThemeFile(file);
+    reports.push(r);
+    if (r.vars) {
+      // Later files overwrite earlier on conflict.
+      Object.keys(r.vars).forEach(k => {
+        if (r.vars[k]) merged[k] = r.vars[k];
+      });
+    }
+  }
+
+  const keys = Object.keys(merged);
+  if (keys.length === 0) {
+    const errs = reports.filter(r => r.error).map(r => r.name + ': ' + r.error).join('; ');
+    showToast('ERROR: no theme variables found' + (errs ? ' (' + errs + ')' : ''));
+    return;
+  }
+
+  // Apply the merged map. _writeVar already marks unsaved + the
+  // editor input listeners trigger a preview re-render on the next
+  // tick. We still rebuild the editor body explicitly so all inputs
+  // reflect the new values immediately.
+  let applied = 0;
+  keys.forEach(k => {
+    if (!merged[k]) return;
+    _writeVar(k, merged[k]);
+    applied += 1;
+  });
+  buildEditorBody();
+  renderPreviewGrid();
+
+  // Build a friendly summary toast — single-file shows the source tag,
+  // multi-file shows file count + total var count.
+  let summary;
+  if (reports.length === 1) {
+    summary = 'Imported ' + applied + ' theme var(s) from ' + reports[0].name;
+  } else {
+    summary = 'Merged ' + reports.length + ' files · ' + applied + ' theme var(s)';
+  }
+  showToast(summary + ' — name + Save to keep');
+  console.log('[import] ' + summary);
+  reports.forEach(r => console.log('   · ' + r.name + ' (' + r.source + ')' + (r.error ? ' [error: ' + r.error + ']' : '')));
+}
+
+// Back-compat alias — older code paths or external scripts may still
+// call importHTMLFile() with a single file. Forwards to the multi
+// handler so behavior is identical.
+async function importHTMLFile(file) { return importThemeFiles(file ? [file] : []); }
+
+// Wire up the file input + button. Hidden input pattern keeps the
+// styling consistent with the rest of the toolbar. The input has the
+// `multiple` attribute, so e.target.files can hold any number of
+// files; the handler merges them in selection order.
+(function _wireImportTheme() {
+  const btn = document.getElementById('btn-import-html');
+  const input = document.getElementById('import-html-file');
+  if (!btn || !input) return;
+  btn.addEventListener('click', () => input.click());
+  input.addEventListener('change', async (e) => {
+    const files = e.target.files;
+    if (files && files.length) await importThemeFiles(files);
+    input.value = '';   // reset so re-picking the same files still fires
+  });
+})();
+
+// Wire the Download template button — emits the css + json + preview
+// triple from whatever theme is currently selected in the dropdown.
+(function _wireDownloadTemplate() {
+  const btn = document.getElementById('btn-download-template');
+  if (!btn) return;
+  btn.addEventListener('click', () => {
+    try { downloadThemeTemplate(); }
+    catch (e) { console.error('[customize] download template failed:', e); showToast('ERROR: ' + e.message); }
+  });
+})();
+
 // Left panel: header toggles whole editor-body; each schema section toggles
 // its own .editor-section-body. buildEditorBody() runs on boot and on
 // theme / preview selection changes.
@@ -1839,6 +2843,12 @@ document.getElementById('preview-bg-swatches')?.addEventListener('click', functi
     }
     if (t.closest && t.closest('#btn-save')) { e.preventDefault(); saveAsCustom(); return; }
     if (t.closest && t.closest('#btn-discard')) { e.preventDefault(); discardChanges(); return; }
+    if (t.closest && t.closest('#btn-clear-focus')) {
+      e.preventDefault();
+      setInspectorByKind(null);
+      _highlightActiveScreenCards();
+      return;
+    }
     if (t.closest && t.closest('#btn-show-all-vars')) {
       e.preventDefault();
       SELECTED_PREVIEW_INDEX = null;
