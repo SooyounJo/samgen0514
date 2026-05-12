@@ -269,8 +269,14 @@
     min-width: 0;
     /* Inherits nothing; receives all live theme vars via inline style in applyThemeVars */
   }
-  @media (max-width: 1080px) {
-    /* Stack vertically on narrow screens — editor first, preview after. */
+  @media (max-width: 820px) {
+    /* Stack vertically on truly narrow screens — editor first,
+       preview after. Threshold lowered from 1080 → 820 so when
+       customize.html is embedded as a side panel inside genui (≈ the
+       canvas width, typically 900–1500 px) the side-by-side editor +
+       preview layout stays active. The grid's first column has
+       minmax(300px, 360px) so it still works comfortably down to
+       ~620 px panel width; only below 820 do we stack. */
     .layout-row { grid-template-columns: 1fr; }
     .editor-col { position: static; max-height: none; }
   }
@@ -679,15 +685,11 @@
 </head>
 <body>
 
-<header>
-  <h1>Theme Customizer</h1>
-  <span class="sub">CSS variable presets · live preview · apply to whole site</span>
-  <span class="active-pill" id="active-pill">Default · One UI 8.5</span>
-  <div class="nav">
-    <a href="/">← GenUI</a>
-    <a href="/improve">Improvements</a>
-  </div>
-</header>
+<!-- Header chrome removed — when embedded as a side panel in genui's
+     main window, the host already provides identity. The active-pill
+     element is still referenced by JS (saveAsCustom / updateOnSelect),
+     so an INVISIBLE placeholder keeps those calls error-free. -->
+<span id="active-pill" style="display:none;"></span>
 
 <div class="toolbar">
   <label>Theme</label>
@@ -763,8 +765,9 @@
                  designer sees the theme across types at one glance. -->
           </div>
           <div class="preview-screen-hint">
-            6 scenarios · S26 aspect (19.5:9) · uses your
-            <code>--screen-padding-*</code>, <code>--gap-screen</code>, <code>--gap-cards</code>, <code>--screen-grid-columns</code> tokens.
+            6 scenarios · S26 aspect (19.5:9) · each phone mixes 1-col and 2-col groups so the same card type
+            renders in both contexts. Uses your <code>--screen-padding-*</code>, <code>--gap-screen</code>,
+            <code>--gap-cards</code>, <code>--screen-grid-columns</code> tokens.
           </div>
         </div>
       </div>
@@ -1629,82 +1632,137 @@ function updateFlatSchemeToggle() {
 //  slider tweak (font, gap, padding, columns) re-renders all six in
 //  unison so the designer sees their work across screen types at once.
 //
-//  Each scenario is a list of "groups", each group is { label, role,
-//  variant, gridable? }. gridable groups respect the --screen-grid-
-//  columns token; non-gridable always stack vertically (e.g. action
-//  rows look bad in a 2-col grid).
+//  Each scenario is a list of "groups", each group is
+//    { items: [{role, variant}, ...], gridable: bool }.
+//  Gridable groups respect the --screen-grid-columns token (typically
+//  defaults to 2); non-gridable always stack vertically (action rows,
+//  hero now-bars, anything that breaks visually in a 2-col layout).
+//
+//  Each phone intentionally MIXES 1-col and 2-col groups so a single
+//  glance shows how the same card type behaves in both contexts
+//  (full-width vs. half-width). This is the screen-mode equivalent
+//  of the cards-mode "see every card in isolation" — it surfaces
+//  responsive issues the cards mode would hide.
 // ---------------------------------------------------------------------------
 const SCREEN_PREVIEW_SCENARIOS = [
   {
     label: 'Glance',
     header: 'Today',
-    primary: [
-      { role: 'focus-block', variant: { kind: 'weather', temp: '23°', condition: 'Partly cloudy', location: 'Seoul', feels: '21°', icon: 'cloud-sun' } },
-      { role: 'focus-block', variant: { kind: 'calendar', section: 'NEXT UP · TODAY', time: '9:30 AM', duration: '30 min', title: 'Team stand-up', location: 'Studio A' } }
-    ],
-    primaryGridable: true,
-    secondary: [
-      { role: 'focus-block', variant: { kind: 'reminder', task: 'Review proposal', due: '5 PM', count: '3', section: 'TODAY · 3 ITEMS' } }
+    groups: [
+      // 2-col: Weather + Calendar side-by-side (the "morning glance" pattern)
+      { gridable: true, items: [
+        { role: 'focus-block', variant: { kind: 'weather', temp: '23°', condition: 'Partly cloudy', location: 'Seoul', feels: '21°', icon: 'cloud-sun' } },
+        { role: 'focus-block', variant: { kind: 'calendar', section: 'NEXT UP · TODAY', time: '9:30 AM', duration: '30 min', title: 'Team stand-up', location: 'Studio A' } }
+      ]},
+      // 1-col: full-width reminder summary
+      { gridable: false, items: [
+        { role: 'focus-block', variant: { kind: 'reminder', task: 'Review proposal', due: '5 PM', count: '3', section: 'TODAY · 3 ITEMS' } }
+      ]},
+      // 2-col: ETA + another reminder — shows how the same card type
+      // (focus-block.reminder) sits as both full-width hero AND
+      // half-width tile in the same phone.
+      { gridable: true, items: [
+        { role: 'focus-block', variant: { kind: 'eta', label: 'COMMUTE', value: '32 min', subtext: 'via Line 2', icon: 'navigation' } },
+        { role: 'focus-block', variant: { kind: 'reminder', task: 'Pick up dry cleaning', due: '6 PM', count: '', section: 'NEARBY' } }
+      ]}
     ]
   },
   {
     label: 'Cooking',
     header: 'Cooking Assistant',
-    primary: [
-      { role: 'focus-block', variant: { kind: 'reminder', task: 'Sauté kimchi 3 min', due: 'Step 3 of 7', count: '7', section: 'NEXT STEP' } }
-    ],
-    primaryGridable: false,
-    secondary: [
-      { role: 'focus-block', variant: { kind: 'input', section: 'STEP 3 OF 7', topic: 'Sauté kimchi 3 min', detail: 'then add cold rice', facets: [] } },
-      { role: 'action-row',  variant: { actions: [{ label: 'Done' }, { label: 'Repeat' }, { label: 'Next' }] } }
+    groups: [
+      // 1-col hero: now-bar timer occupies full width (always non-gridable)
+      { gridable: false, items: [
+        { role: 'now-bar', variant: { type: 'timer', label: 'Step 3 of 7', value: '02:30', subtext: 'Sauté kimchi' } }
+      ]},
+      // 2-col: ingredients reference + next-step preview side-by-side
+      // — proves the "input summary" card is legible at narrower width
+      { gridable: true, items: [
+        { role: 'focus-block', variant: { kind: 'input', section: 'INGREDIENTS', topic: '6 items', detail: 'Have all on hand', facets: [] } },
+        { role: 'focus-block', variant: { kind: 'reminder', task: 'Add cold rice', due: 'Step 4', count: '', section: 'COMING UP' } }
+      ]},
+      // 1-col action row at the bottom (action rows always full-width)
+      { gridable: false, items: [
+        { role: 'action-row',  variant: { actions: [{ label: 'Done' }, { label: 'Repeat' }, { label: 'Next' }] } }
+      ]}
     ]
   },
   {
     label: 'Calendar',
     header: 'Schedule',
-    primary: [
-      { role: 'focus-block', variant: { kind: 'calendar', section: 'TUE · 9:30', time: '9:30 AM', duration: '30 min', title: 'Stand-up', location: 'Studio A' } },
-      { role: 'focus-block', variant: { kind: 'calendar', section: 'TUE · 11:00', time: '11:00 AM', duration: '60 min', title: 'Design review', location: 'Room 4' } }
-    ],
-    primaryGridable: true,
-    secondary: [
-      { role: 'focus-block', variant: { kind: 'calendar', section: 'TUE · 14:00', time: '2:00 PM', duration: '45 min', title: 'Coffee · Sarah', location: 'Cafe Bene' } }
+    groups: [
+      // 2-col: two events side-by-side — typical agenda dense layout
+      { gridable: true, items: [
+        { role: 'focus-block', variant: { kind: 'calendar', section: 'TUE · 9:30', time: '9:30 AM', duration: '30 min', title: 'Stand-up', location: 'Studio A' } },
+        { role: 'focus-block', variant: { kind: 'calendar', section: 'TUE · 11:00', time: '11:00 AM', duration: '60 min', title: 'Design review', location: 'Room 4' } }
+      ]},
+      // 1-col: full-width "next event" hero
+      { gridable: false, items: [
+        { role: 'focus-block', variant: { kind: 'calendar', section: 'TUE · 14:00', time: '2:00 PM', duration: '45 min', title: 'Coffee · Sarah', location: 'Cafe Bene' } }
+      ]},
+      // 2-col: two reminders — pre-meeting prep + travel — that
+      // typically accompany calendar items
+      { gridable: true, items: [
+        { role: 'focus-block', variant: { kind: 'reminder', task: 'Prep slides', due: '8:45 AM', count: '', section: 'PRE-MEETING' } },
+        { role: 'focus-block', variant: { kind: 'reminder', task: 'Leave for Cafe Bene', due: '1:30 PM', count: '20 min', section: 'TRAVEL' } }
+      ]}
     ]
   },
   {
     label: 'Messages',
     header: 'Messages',
-    primary: [
-      { role: 'focus-block', variant: { kind: 'message', sender: 'Sarah', preview: 'Running 10 min late — see you at coffee', section: 'MESSAGES · 2 NEW' } },
-      { role: 'focus-block', variant: { kind: 'message', sender: 'Mom', preview: 'Got the package today — thanks!', section: '' } }
-    ],
-    primaryGridable: false,
-    secondary: [
-      { role: 'action-row', variant: { actions: [{ label: 'Reply' }, { label: 'Mark read' }, { label: 'Mute' }] } }
+    groups: [
+      // 2-col: two message threads side-by-side (inbox-style)
+      { gridable: true, items: [
+        { role: 'focus-block', variant: { kind: 'message', sender: 'Sarah', preview: 'Running 10 min late', section: 'MESSAGES · 2 NEW' } },
+        { role: 'focus-block', variant: { kind: 'message', sender: 'Mom', preview: 'Got the package — thanks!', section: '' } }
+      ]},
+      // 1-col: full-width "newest thread" hero with longer preview
+      { gridable: false, items: [
+        { role: 'focus-block', variant: { kind: 'message', sender: 'Design team', preview: 'Anyone available for a 15-min sync on the customize panel layout?', section: 'GROUP · 3 NEW' } }
+      ]},
+      // 1-col action row
+      { gridable: false, items: [
+        { role: 'action-row', variant: { actions: [{ label: 'Reply' }, { label: 'Mark read' }, { label: 'Mute' }] } }
+      ]}
     ]
   },
   {
     label: 'Navigation',
     header: 'Driving',
-    primary: [
-      { role: 'now-bar', variant: { type: 'navigation', distance: '200 m', instruction: 'Turn right onto Hangang-daero', eta: '8 min' } }
-    ],
-    primaryGridable: false,
-    secondary: [
-      { role: 'focus-block', variant: { kind: 'eta', label: 'ARRIVAL', value: '15:24', subtext: '12 min · Hangang Bridge', icon: 'navigation' } },
-      { role: 'action-row',  variant: { actions: [{ label: 'Reroute' }, { label: 'Stop' }, { label: 'Voice' }] } }
+    groups: [
+      // 1-col hero: now-bar with turn instruction (always full-width)
+      { gridable: false, items: [
+        { role: 'now-bar', variant: { type: 'navigation', distance: '200 m', instruction: 'Turn right onto Hangang-daero', eta: '8 min' } }
+      ]},
+      // 2-col: ETA card + parking reminder — common driving HUD pair
+      { gridable: true, items: [
+        { role: 'focus-block', variant: { kind: 'eta', label: 'ARRIVAL', value: '15:24', subtext: '12 min', icon: 'navigation' } },
+        { role: 'focus-block', variant: { kind: 'reminder', task: 'Find parking near gate 3', due: 'On arrival', count: '', section: 'AT DESTINATION' } }
+      ]},
+      // 1-col action row
+      { gridable: false, items: [
+        { role: 'action-row',  variant: { actions: [{ label: 'Reroute' }, { label: 'Stop' }, { label: 'Voice' }] } }
+      ]}
     ]
   },
   {
     label: 'Search',
     header: 'Search',
-    primary: [
-      { role: 'focus-block', variant: { kind: 'input', section: 'SEARCH · COFFEE SHOPS', topic: 'Found 12 nearby', detail: '', facets: ['Vegetarian', '< 1 km', 'Open now'] } }
-    ],
-    primaryGridable: false,
-    secondary: [
-      { role: 'focus-block', variant: { kind: 'reminder', task: 'Cafe Bene · Hapjeong', due: '0.4 km', count: '4.6★', section: 'TOP RESULT' } },
-      { role: 'action-row',  variant: { actions: [{ label: 'Open' }, { label: 'Save' }, { label: 'Call' }] } }
+    groups: [
+      // 1-col input summary with facet chips (chip row needs width)
+      { gridable: false, items: [
+        { role: 'focus-block', variant: { kind: 'input', section: 'SEARCH · COFFEE SHOPS', topic: 'Found 12 nearby', detail: '', facets: ['Vegetarian', '< 1 km', 'Open now'] } }
+      ]},
+      // 2-col: top 2 results side-by-side — the typical SERP card grid
+      { gridable: true, items: [
+        { role: 'focus-block', variant: { kind: 'reminder', task: 'Cafe Bene · Hapjeong', due: '0.4 km', count: '4.6★', section: 'TOP RESULT' } },
+        { role: 'focus-block', variant: { kind: 'reminder', task: 'Blue Bottle · Yeonnam', due: '0.6 km', count: '4.7★', section: '#2' } }
+      ]},
+      // 1-col action row
+      { gridable: false, items: [
+        { role: 'action-row',  variant: { actions: [{ label: 'Open' }, { label: 'Save' }, { label: 'Call' }] } }
+      ]}
     ]
   }
 ];
@@ -1827,29 +1885,40 @@ function _buildScenarioPhone(scenario, gridCols) {
     canvas.appendChild(header);
   }
 
-  // Primary group — respects gridCols if scenario allows it.
-  if (Array.isArray(scenario.primary) && scenario.primary.length) {
-    const primary = document.createElement('div');
-    const useGrid = scenario.primaryGridable && gridCols !== '1' && gridCols !== '';
-    primary.className = 'preview-screen-group' + (useGrid ? ' is-grid' : '');
-    if (useGrid && /\bfr\b/.test(gridCols)) primary.style.gridTemplateColumns = gridCols;
-    scenario.primary.forEach(spec => {
-      const el = _renderAtomicCard(spec);
-      if (el) primary.appendChild(el);
-    });
-    canvas.appendChild(primary);
-  }
+  // Unified group iteration. Each scenario declares `groups`: an array
+  // of { items, gridable } objects rendered in order. Mixing 1-col
+  // and 2-col groups inside one phone is the whole point — it lets
+  // the designer see the same card type at full width AND half
+  // width on a single screen, surfacing responsive issues.
+  //
+  // Backward compat: if a scenario still uses the legacy
+  // primary/primaryGridable + secondary shape, synthesize a groups
+  // array from those fields so nothing breaks during migration.
+  const groups = Array.isArray(scenario.groups)
+    ? scenario.groups
+    : [
+        ...(Array.isArray(scenario.primary)   && scenario.primary.length   ? [{ items: scenario.primary,   gridable: !!scenario.primaryGridable }]   : []),
+        ...(Array.isArray(scenario.secondary) && scenario.secondary.length ? [{ items: scenario.secondary, gridable: false }] : [])
+      ];
 
-  // Secondary group — always stacks vertically.
-  if (Array.isArray(scenario.secondary) && scenario.secondary.length) {
-    const secondary = document.createElement('div');
-    secondary.className = 'preview-screen-group';
-    scenario.secondary.forEach(spec => {
+  groups.forEach(group => {
+    if (!group || !Array.isArray(group.items) || !group.items.length) return;
+    const groupEl = document.createElement('div');
+    // gridable groups respect the --screen-grid-columns token. If the
+    // token is "1" (or empty) the group stacks even when gridable —
+    // honors the designer's intent when they globally set 1-column
+    // mode from the editor.
+    const useGrid = group.gridable && gridCols !== '1' && gridCols !== '';
+    groupEl.className = 'preview-screen-group' + (useGrid ? ' is-grid' : '');
+    // Custom fr-based templates (e.g. "1fr 2fr") pass through verbatim;
+    // simple numeric values use the .is-grid default of 2 cols.
+    if (useGrid && /\bfr\b/.test(gridCols)) groupEl.style.gridTemplateColumns = gridCols;
+    group.items.forEach(spec => {
       const el = _renderAtomicCard(spec);
-      if (el) secondary.appendChild(el);
+      if (el) groupEl.appendChild(el);
     });
-    canvas.appendChild(secondary);
-  }
+    canvas.appendChild(groupEl);
+  });
 
   phone.appendChild(canvas);
   return phone;

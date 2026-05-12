@@ -90,10 +90,15 @@
   // ==========================================================================
   //  UI — shared One UI icons (AI sparkle, etc.)
   // ==========================================================================
-  // One UI "ai-colour" star (Figma node 449:385) — 4-point star with pinched
-  // waist + small accent sparkle. Uses a Galaxy AI gradient; each call
-  // generates a unique gradient ID to avoid collisions when multiple copies
-  // are rendered on the same page.
+  // One UI "ai" icon (Figma node 449:384) — 4-vector composition:
+  //   · Big star    (V4, w11.67 h13.61, right side)
+  //   · Medium star (V3, w7.57  h10.24, lower-left)
+  //   · Small star  (V1, w3.89  h4.50,  upper-left accent)
+  //   · Small star  (V2, w3.89  h4.50,  lower-right accent)
+  // Centers are derived from the Figma node positions; each glyph is
+  // translated to its top-left bounding-box origin so they all live in
+  // one 24×24 viewBox. Uses the Galaxy AI gradient; each call mints a
+  // fresh gradient id so multiple instances on one page don't collide.
   var _aiStarSeq = 0;
   function aiStar(opts) {
     var o = opts || {};
@@ -107,12 +112,16 @@
         '<stop offset="50%" stop-color="#64E9E3"/>' +
         '<stop offset="100%" stop-color="#9FFAC7"/>' +
       '</linearGradient></defs>';
-    // Main 4-point star (pinched-waist diamond)
-    var mainStar = '<path d="M12 2C12 6 13 9 16 11C13 13 12 16 12 20C12 16 11 13 8 11C11 9 12 6 12 2Z" fill="' + fill + '"/>';
-    // Accent sparkle (upper-right, smaller)
-    var accent   = '<path d="M19 14C19 15.5 19.5 17 21 17.5C19.5 18 19 19.5 19 21C19 19.5 18.5 18 17 17.5C18.5 17 19 15.5 19 14Z" fill="' + fill + '" opacity="0.85"/>';
+    var big =
+      '<g transform="translate(8.306, 4.843)"><path fill-rule="evenodd" clip-rule="evenodd" d="M8.022 4.617L6.328 0.303C6.123 -0.101 5.547 -0.101 5.342 0.303L3.647 4.617L0.303 6.314C-0.101 6.518 -0.101 7.095 0.303 7.3L3.647 8.997L5.342 13.311C5.547 13.715 6.123 13.715 6.328 13.311L8.022 8.997L11.367 7.3C11.77 7.095 11.77 6.518 11.367 6.314L8.022 4.617Z" fill="' + fill + '"/></g>';
+    var medium =
+      '<g transform="translate(3.703, 8.532)"><path fill-rule="evenodd" clip-rule="evenodd" d="M3.94625 0.228C4.09725 -0.076 4.52325 -0.076 4.67425 0.228L5.18825 1.562L4.77725 1.772C3.34525 2.524 3.61825 3.924 4.74525 4.42L4.77725 4.437L7.54725 5.842L7.57425 5.912L5.92625 6.765L4.67425 10.008C4.52325 10.312 4.09725 10.312 3.94625 10.008L2.69425 6.765L0.22425 5.489C-0.07475 5.335 -0.07475 4.901 0.22425 4.747L2.69425 3.471L3.94625 0.228Z" fill="' + fill + '"/></g>';
+    var smallA =
+      '<g transform="translate(6.565, 2.8985)"><path fill-rule="evenodd" clip-rule="evenodd" d="M1.21625 1.52675L1.78125 0.09975C1.84925 -0.03325 2.04125 -0.03325 2.10925 0.09975L2.67425 1.52675L3.78925 2.08875C3.92425 2.15575 3.92425 2.34675 3.78925 2.41475L2.67425 2.97675L2.10925 4.40375C2.04125 4.53675 1.84925 4.53675 1.78125 4.40375L1.21625 2.97675L0.10125 2.41475C-0.03375 2.34675 -0.03375 2.15575 0.10125 2.08875L1.21625 1.52675Z" fill="' + fill + '" opacity="0.85"/></g>';
+    var smallB =
+      '<g transform="translate(16.395, 16.518)"><path fill-rule="evenodd" clip-rule="evenodd" d="M1.21625 1.52775L1.78125 0.09975C1.84925 -0.03325 2.04125 -0.03325 2.10925 0.09975L2.67425 1.52775L3.78925 2.08875C3.92325 2.15675 3.92325 2.34775 3.78925 2.41475L2.67425 2.97675L2.10925 4.40375C2.04125 4.53775 1.84925 4.53775 1.78125 4.40375L1.21625 2.97675L0.10125 2.41475C-0.03375 2.34775 -0.03375 2.15675 0.10125 2.08875L1.21625 1.52775Z" fill="' + fill + '" opacity="0.85"/></g>';
     return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" data-name="ai-star">' +
-             gradient + mainStar + accent +
+             gradient + big + medium + smallA + smallB +
            '</svg>';
   }
 

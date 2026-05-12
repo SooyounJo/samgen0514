@@ -152,29 +152,16 @@
     <a class="topbar-brand" href="index.html">SAMSUNG <span>GenUI</span></a>
   </div>
   <div class="topbar-right">
-    <!-- LOOK cluster — design-system theme + canvas light/dark mode.
-         Both control "how the rendered UI looks", so they sit first
-         (leftmost) and adjacent to each other. Theme is the design-
-         system token preset (Default / Minimal / Vibrant / Mono);
-         the ✎ icon opens /customize in a new window. Light/Dark
-         toggles the simulated device frame's display mode. -->
-    <span id="topbarThemePicker" style="display:inline-flex;align-items:center;gap:2px;padding:0 4px 0 10px;border-radius:8px;background:rgba(255,255,255,0.04);border:1px solid var(--divider);height:28px;">
-      <span style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:0.4px;">Theme</span>
-      <select id="themePickerSelect"
-        onchange="applyThemeFromPicker(this.value)"
-        title="Switch theme — affects all rendered cards and page chrome"
-        style="appearance:none;background:transparent;color:var(--text);border:0;outline:none;font-family:var(--font);font-size:11px;font-weight:500;padding:0 18px 0 6px;cursor:pointer;background-image:url(&quot;data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E&quot;);background-repeat:no-repeat;background-position:right 4px center;height:24px;">
-        <option value="" disabled selected>Loading…</option>
-      </select>
-      <a href="/customize" target="_blank" rel="noopener" title="Open theme editor in new window — edit values + save as custom"
-         style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:5px;color:var(--text-3);text-decoration:none;border-left:1px solid var(--divider);margin-left:2px;">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 113 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-      </a>
-    </span>
-    <button id="themeToggleBtn" class="topbar-btn" onclick="toggleTheme()">Light</button>
+    <!-- Theme picker + Export + Clear moved into the Generate tab so
+         the topbar stays minimal (just the brand). See "Canvas controls"
+         row below the Run Pipeline button in Generate panel. -->
 
-    <!-- DEVICE cluster — what hardware the canvas simulates. -->
-    <div class="device-selector" id="deviceSelector">
+    <!-- Device selector removed — site is Galaxy S26-only by default.
+         The element below is kept hidden so toggleDeviceList / selectDevice
+         callers in app/settings.js continue to find the DOM nodes they
+         expect (avoids null-reference errors). To re-enable, change
+         display:none → flex and the dropdown re-appears. -->
+    <div class="device-selector" id="deviceSelector" style="display:none;">
       <button class="device-selector-btn" onclick="toggleDeviceList()" id="deviceBtn">
         <span class="dev-icon">📱</span>
         <span class="dev-name" id="deviceBtnLabel">Galaxy S26</span>
@@ -185,38 +172,6 @@
           <div class="dev-li-info">
             <div class="dev-li-name">Galaxy S26</div>
             <div class="dev-li-spec">1080 × 2340 · 19.5:9 · 360dp</div>
-          </div>
-          <span class="dev-li-check">✓</span>
-        </div>
-        <div class="device-list-item" data-mode="tablet" onclick="selectDevice('tablet',this)">
-          <span class="dev-li-icon">📋</span>
-          <div class="dev-li-info">
-            <div class="dev-li-name">Galaxy Tab S10+</div>
-            <div class="dev-li-spec">1752 × 2800 · 16:10 portrait</div>
-          </div>
-          <span class="dev-li-check">✓</span>
-        </div>
-        <div class="device-list-item" data-mode="watch" onclick="selectDevice('watch',this)">
-          <span class="dev-li-icon">⌚</span>
-          <div class="dev-li-info">
-            <div class="dev-li-name">Galaxy Watch 7</div>
-            <div class="dev-li-spec">480 × 480 · 1:1 circular · 240dp</div>
-          </div>
-          <span class="dev-li-check">✓</span>
-        </div>
-        <div class="device-list-item" data-mode="tv" onclick="selectDevice('tv',this)">
-          <span class="dev-li-icon">📺</span>
-          <div class="dev-li-info">
-            <div class="dev-li-name">Samsung TV</div>
-            <div class="dev-li-spec">1920 × 1080 · 16:9 · Tizen</div>
-          </div>
-          <span class="dev-li-check">✓</span>
-        </div>
-        <div class="device-list-item" data-mode="desktop" onclick="selectDevice('desktop',this)">
-          <span class="dev-li-icon">💻</span>
-          <div class="dev-li-info">
-            <div class="dev-li-name">Galaxy Book</div>
-            <div class="dev-li-spec">2880 × 1800 · 16:10 landscape</div>
           </div>
           <span class="dev-li-check">✓</span>
         </div>
@@ -231,12 +186,8 @@
          getElementById without errors; the visual is suppressed. -->
     <div id="agentModeIndicator" class="agent-mode-indicator local" onclick="toggleAgentMode()" style="display:none;" title="Local / AI agent mode (hidden — Pipeline is always active)">Local</div>
 
-    <!-- ACTION — destructive canvas action sits last to reduce mis-clicks
-         on adjacent settings. Export HTML produces a self-contained file
-         with all CSS + active theme inlined; the file can be re-imported
-         in /customize to extract its theme as a new editable preset. -->
-    <button class="topbar-btn" onclick="exportHTML()" title="Save canvas as a self-contained HTML file (all CSS + theme inlined, re-importable in Customize)">Export HTML</button>
-    <button class="topbar-btn" onclick="clearCanvas()">Clear</button>
+    <!-- Export + Clear moved into the Generate tab (canvas controls
+         row beneath Run Pipeline). Topbar stays clean. -->
   </div>
 </div>
 
@@ -245,9 +196,9 @@
   <!-- SIDEBAR -->
   <div class="sidebar">
     <div class="sidebar-tabs">
-      <button class="sidebar-tab active" style="color:#0381FE;font-weight:700;" onclick="switchTab(5,this)">Generate</button>
+      <button class="sidebar-tab active" onclick="switchTab(5,this)">Generate</button>
       <button class="sidebar-tab" onclick="switchTab(6,this)">Design</button>
-      <button class="sidebar-tab" onclick="switchTab(7,this)">Refine</button>
+      <button class="sidebar-tab" onclick="switchTab(7,this)">MLP Prototype</button>
     </div>
     <div class="sidebar-content">
 
@@ -677,31 +628,74 @@
               onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault();pipelineGenerate();}"
               oninput="autoResizeChatInput(this)"
               placeholder="Describe your screen :)"
-              style="width:100%;min-height:56px;max-height:240px;border-radius:14px;border:1px solid var(--divider);background:var(--surface);color:var(--text);font-family:var(--font);font-size:13px;line-height:22px;padding:16px 102px 16px 16px;box-sizing:border-box;resize:none;overflow-y:auto;display:block;"></textarea>
+              style="width:100%;min-height:44px;max-height:240px;border-radius:12px;border:1.5px solid var(--primary, #0381FE);background:var(--surface);color:var(--text);font-family:var(--font);font-size:13px;line-height:20px;padding:11px 102px 11px 14px;box-sizing:border-box;resize:none;overflow-y:auto;display:block;box-shadow:0 0 0 3px rgba(3,129,254,0.10);"></textarea>
 
-            <!-- Image upload (anchored bottom-right so it stays put when textarea grows) -->
-            <label class="chat-inline-btn" title="Attach reference image" style="position:absolute;right:68px;bottom:14px;width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text-2);transition:all 0.15s;">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="3.5" y="5.25" width="17" height="13.5" rx="1.75" stroke="currentColor" stroke-width="1.5"/><circle cx="8.5" cy="10" r="1.5" stroke="currentColor" stroke-width="1.5"/><path d="M4 17L9.5 12L13.5 15.5L16.5 13L20 16.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <!-- Image upload — One UI Design Kit image_outline (node 340:8900).
+                 Single-path outline: rounded square + mountains + sun dot. -->
+            <label class="chat-inline-btn" title="Attach reference image" style="position:absolute;right:68px;bottom:8px;width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text-2);transition:all 0.15s;">
+              <svg width="16" height="16" viewBox="0 0 17.5 17.5" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <path d="M0.8574 14.666L5.2114 10.56C5.6024 10.192 6.2134 10.198 6.5974 10.573L7.9674 11.914C8.1644 12.106 8.4854 12.106 8.6814 11.914L12.0454 8.617C12.4404 8.23 13.0744 8.237 13.4614 8.632L16.6424 11.887M14.25 16.75H3.25C1.869 16.75 0.75 15.631 0.75 14.25V3.25C0.75 1.869 1.869 0.75 3.25 0.75H14.25C15.631 0.75 16.75 1.869 16.75 3.25V14.25C16.75 15.631 15.631 16.75 14.25 16.75ZM5.4922 7.3345C6.4572 7.3345 7.2422 6.5495 7.2422 5.5845C7.2422 4.6195 6.4572 3.8345 5.4922 3.8345C4.5272 3.8345 3.7422 4.6195 3.7422 5.5845C3.7422 6.5495 4.5272 7.3345 5.4922 7.3345Z"
+                      stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
               <input type="file" id="genImage" accept="image/*" style="display:none;" onchange="handleRefImage(this)">
             </label>
 
-            <!-- Voice input (Korean) — One UI mic outline -->
-            <button id="voiceBtn" class="chat-inline-btn" title="음성 입력 (한국어) — 클릭 후 말씀하세요" onclick="toggleVoiceInput()" style="position:absolute;right:40px;bottom:14px;width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text-2);background:none;border:none;transition:all 0.15s;">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="9" y="3" width="6" height="11" rx="3" stroke="currentColor" stroke-width="1.5"/><path d="M6 11v1a6 6 0 0012 0v-1M12 18v3M8 21h8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+            <!-- Voice input (Korean) — One UI Design Kit mic_outline (node 552:1568).
+                 Three vectors composed into one 24x24 viewBox: capsule body +
+                 U-arc stand + bottom horizontal foot. -->
+            <button id="voiceBtn" class="chat-inline-btn" title="음성 입력 (한국어) — 클릭 후 말씀하세요" onclick="toggleVoiceInput()" style="position:absolute;right:40px;bottom:8px;width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text-2);background:none;border:none;transition:all 0.15s;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="8.7" y="2.94" width="6.6" height="11.4" rx="3.3"/>
+                <path d="M5.97 11.04C5.97 14.37 8.67 17.07 12 17.07C15.33 17.07 18.03 14.37 18.03 11.04" fill="none"/>
+                <path d="M7.81 20.55H16.19"/>
+              </svg>
             </button>
 
             <!-- Send (rightmost) — AI star icon. Triggers Path A pipeline
                  (interpret → select → compose → validate → explain). The
                  Enter key in the textarea above does the same thing. -->
-            <button class="chat-inline-btn ai-send-btn" title="Generate (Path A pipeline) — Shift+Enter for newline" onclick="pipelineGenerate()" style="position:absolute;right:10px;bottom:14px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;cursor:pointer;background:none;border:none;padding:0;">
+            <button class="chat-inline-btn ai-send-btn" title="Generate (Path A pipeline) — Shift+Enter for newline" onclick="pipelineGenerate()" style="position:absolute;right:10px;bottom:8px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;cursor:pointer;background:none;border:none;padding:0;">
               <span class="ai-star-slot" data-size="20"></span>
             </button>
           </div>
+
           <div style="margin-top:8px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
-            <button onclick="pipelineGenerate()" title="Run the full 5-step AI pipeline (interpret → ui_state → plan → compose → validate → explain). Each step&apos;s output is streamed to the panel below." style="padding:6px 12px;border-radius:8px;background:rgba(3,129,254,0.12);color:#3E91FF;border:1px solid rgba(3,129,254,0.25);font-family:var(--font);font-size:11px;font-weight:600;cursor:pointer;transition:all 0.15s;display:inline-flex;align-items:center;gap:6px;">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.6"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              Run Pipeline
-            </button>
+            <!-- Run Pipeline button removed — the textarea's Enter key
+                 (and the inline ai-send-btn icon) both call pipelineGenerate()
+                 already, making the big button redundant. -->
+
+            <!-- Theme picker — sits LEFT of the run toggles so the
+                 "choose look" decision precedes "choose run options"
+                 visually. The pencil icon (outline variant from OneUI
+                 Design Kit · node 341:39) sits inside the same pill,
+                 right of the dropdown chevron, and opens /customize. -->
+            <span id="topbarThemePicker" style="display:inline-flex;align-items:center;gap:2px;padding:0 4px 0 10px;border-radius:8px;background:rgba(255,255,255,0.04);border:1px solid var(--divider);height:28px;">
+              <span style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:0.4px;">Theme</span>
+              <select id="themePickerSelect"
+                onchange="applyThemeFromPicker(this.value)"
+                title="Switch theme — affects all rendered cards and page chrome"
+                style="appearance:none;background:transparent;color:var(--text);border:0;outline:none;font-family:var(--font);font-size:11px;font-weight:500;padding:0 18px 0 6px;cursor:pointer;background-image:url(&quot;data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E&quot;);background-repeat:no-repeat;background-position:right 4px center;height:24px;">
+                <option value="" disabled selected>Loading…</option>
+              </select>
+              <!-- Pencil → opens the Theme Customizer as a SIDE PANEL on the
+                   right of .main (not a new browser tab). The toggle function
+                   lazy-loads the iframe on first click and slides the panel
+                   in via the .open class. Repeat clicks (or ESC, or × in the
+                   panel header) close it. Markup is a <button> rather than
+                   an <a> because there's no navigation target — it's an
+                   in-page UI affordance. -->
+              <button type="button" class="customize-open-btn"
+                      onclick="toggleCustomizePanel()"
+                      title="Customize theme — slides in on the right"
+                      aria-label="Customize theme"
+                      aria-controls="customizeSidePanel"
+                      style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;margin-left:4px;border:0;border-left:1px solid var(--divider);border-radius:0;padding:0 0 0 6px;background:transparent;color:var(--text-3);cursor:pointer;transition:color 0.15s ease;">
+                <svg width="13" height="13" viewBox="0 0 17.55 17.55" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                  <path d="M7.521 14.976C7.329 15.168 6.596 15.723 6.324 15.777L1.156 16.79C0.884 16.844 0.706 16.665 0.759 16.393L1.773 11.228C1.827 10.956 2.381 10.222 2.573 10.030M7.709 14.793C7.417 15.085 6.940 15.085 6.648 14.793L2.759 10.904C2.468 10.612 2.468 10.135 2.759 9.843L11.266 1.336C12.047 0.555 13.313 0.555 14.095 1.336L16.216 3.458C16.997 4.238 16.997 5.504 16.216 6.286L7.709 14.793Z"
+                        stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+            </span>
 
             <!-- Auto-iterate toggle: when ON, after each generate the system
                  captures a snapshot, applies mechanical auto-fixes, and re-runs
@@ -712,24 +706,106 @@
               <span>Auto-iterate</span>
             </label>
 
-            <!-- Output log toggle: ON (default) shows full pipeline JSON +
-                 explainer prose + reasoning arrays. OFF runs in fast mode —
-                 skips Stage 7 (explain) and trims verbose reasoning fields,
-                 typically ~15-25% faster end-to-end. The Path A panels still
-                 render the structural data (interpretation, classification,
-                 layout) — only the narrative prose is missing. -->
+            <!-- Log toggle (formerly "Output log"). Lives next to
+                 Auto-iterate so both run-preference toggles cluster
+                 together. ON (default) = full explainer prose +
+                 reasoning. OFF = fastMode (skip Stage 7, trim
+                 verbose notes; ~15–25 % faster). Same checkbox id
+                 keeps every downstream reader wired without change. -->
             <label class="output-log-toggle" title="When ON (default): full output with explanations + reasoning. When OFF: fast mode — skips the explainer step, trims reasoning notes; ~15-25% faster." style="display:inline-flex;align-items:center;gap:5px;padding:6px 10px;border-radius:8px;background:rgba(255,255,255,0.04);border:1px solid var(--divider);font-size:11px;color:var(--text-2);cursor:pointer;user-select:none;">
               <input type="checkbox" id="outputLogToggle" checked style="margin:0;cursor:pointer;">
-              <span>Output log</span>
+              <span>Log</span>
             </label>
 
-            <details class="genui-user-supplements-details" title="Optional JSON merged into the pipeline after the model runs (music row, uiState, slots)." style="flex-basis:100%;margin-top:6px;border-radius:8px;border:1px solid var(--divider);background:rgba(255,255,255,0.02);padding:8px 10px;">
-              <summary style="cursor:pointer;user-select:none;font-size:11px;color:var(--text-2);font-weight:600;">고급: userSupplements (JSON)</summary>
-              <p style="margin:8px 0 6px;font-size:10px;color:var(--text-3);line-height:1.45;">모델 결과 뒤에 <code style="font-size:10px;">병합</code>됩니다. 예: <code style="font-size:10px;">nowPlaying</code>, <code style="font-size:10px;">uiState</code>(바텀시트), <code style="font-size:10px;">contentBySlot</code>, <code style="font-size:10px;">layoutPlan.floatingSheetTheme</code>.</p>
-              <textarea id="genUserSupplements" rows="5" spellcheck="false"
-                placeholder='{"nowPlaying":{"title":"Blinding Lights","artist":"The Weeknd"},"uiState":{"overlayType":"system-dialog","backgroundPolicy":"dialog-surface","floatingSheetTheme":"light"},"layoutPlan":{"floatingSheetTheme":"light"}}'
-                style="width:100%;min-height:88px;border-radius:10px;border:1px solid var(--divider);background:var(--surface);color:var(--text);font-family:ui-monospace,Consolas,monospace;font-size:11px;line-height:1.35;padding:10px;box-sizing:border-box;resize:vertical;"></textarea>
+            <!-- Canvas controls row removed — Clear is no longer
+                 surfaced in the UI. The clearCanvas() function is
+                 still callable from JS (e.g. between auto-iterate
+                 runs) so nothing breaks. -->
+
+
+            <!-- Pipeline features panel — per-request toggles for each
+                 stage / post-fix. Default all ON so behavior matches
+                 pre-toggle. Designed for A/B latency / quality testing:
+                 turn features off, regenerate, watch the timing panel
+                 below the canvas to see the impact. State is persisted
+                 to localStorage so the user's toggle preferences
+                 survive reloads. Implementation: app/agent.js reads
+                 every checkbox's .checked into `features` and POSTs it
+                 with the scenario. -->
+            <details class="pipeline-features-details" id="pipelineFeaturesDetails" title="Turn individual pipeline features on/off and watch the latency / quality impact." style="flex-basis:100%;margin-top:6px;border-radius:8px;border:1px solid var(--divider);background:rgba(255,255,255,0.02);padding:8px 10px;">
+              <summary style="cursor:pointer;user-select:none;font-size:11px;color:var(--text-2);font-weight:600;display:flex;align-items:center;gap:6px;">
+                <span>Pipeline features</span>
+                <span id="pipelineFeaturesSummary" style="font-size:10px;color:var(--text-3);font-weight:400;">8 / 8 on</span>
+                <span style="flex:1;"></span>
+                <!-- Check/Uncheck all toggle. Lives inside the summary
+                     but click is captured (stopPropagation) so it does
+                     NOT collapse the details. Text label flips based on
+                     current state — "Uncheck all" when ≥1 is on,
+                     "Check all" when all are off. -->
+                <button type="button" id="pipelineFeaturesToggleAll"
+                        onclick="event.stopPropagation(); togglePipelineFeaturesAll();"
+                        title="Turn every feature on or off in one click"
+                        style="font-size:10px;font-weight:600;padding:3px 8px;border-radius:6px;border:1px solid var(--divider);background:rgba(255,255,255,0.04);color:var(--text-2);cursor:pointer;font-family:var(--font);">Uncheck all</button>
+              </summary>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;margin-top:8px;">
+                <label class="pf-toggle" title="Stage 3.5 — parallel content bag (mini model). Fills empty / duplicated slots in the plan with varied facts. ~0s critical path." style="display:inline-flex;align-items:center;gap:6px;font-size:10.5px;color:var(--text-2);cursor:pointer;">
+                  <input type="checkbox" class="pf-flag" data-feature="contentBag" checked style="margin:0;">
+                  <span>Content bag</span>
+                </label>
+                <label class="pf-toggle" title="Stage 3 — RAG embedding shortlist (top-30 from 92). +~400ms." style="display:inline-flex;align-items:center;gap:6px;font-size:10.5px;color:var(--text-2);cursor:pointer;">
+                  <input type="checkbox" class="pf-flag" data-feature="rag" checked style="margin:0;">
+                  <span>RAG shortlist</span>
+                </label>
+                <label class="pf-toggle" title="Stage 7 — Explain (Why-this-UI prose). Adds ~3–5s. Note: legacy 'Output log' toggle also gates this." style="display:inline-flex;align-items:center;gap:6px;font-size:10.5px;color:var(--text-2);cursor:pointer;">
+                  <input type="checkbox" class="pf-flag" data-feature="explain" checked style="margin:0;">
+                  <span>Explain (S7)</span>
+                </label>
+                <label class="pf-toggle" title="4-tier dedup ladder. Strips duplicate-labeled / cross-type-identical components from the plan." style="display:inline-flex;align-items:center;gap:6px;font-size:10.5px;color:var(--text-2);cursor:pointer;">
+                  <input type="checkbox" class="pf-flag" data-feature="dedup" checked style="margin:0;">
+                  <span>Dedup ladder</span>
+                </label>
+                <label class="pf-toggle" title="Per-type cap (≤ 3 of same componentType)." style="display:inline-flex;align-items:center;gap:6px;font-size:10.5px;color:var(--text-2);cursor:pointer;">
+                  <input type="checkbox" class="pf-flag" data-feature="typeCap" checked style="margin:0;">
+                  <span>Type cap (≤3)</span>
+                </label>
+                <label class="pf-toggle" title="Auto-grid: 3+ same-type TILE cards promote to 2-col grid. Whitelist excludes text-heavy cards." style="display:inline-flex;align-items:center;gap:6px;font-size:10.5px;color:var(--text-2);cursor:pointer;">
+                  <input type="checkbox" class="pf-flag" data-feature="autoGrid" checked style="margin:0;">
+                  <span>Auto-grid</span>
+                </label>
+                <label class="pf-toggle" title="Chrome migration: moves misplaced non-chrome children out of chrome groups." style="display:inline-flex;align-items:center;gap:6px;font-size:10.5px;color:var(--text-2);cursor:pointer;">
+                  <input type="checkbox" class="pf-flag" data-feature="chromeMigration" checked style="margin:0;">
+                  <span>Chrome migration</span>
+                </label>
+                <label class="pf-toggle" title="Role-based reorder within groups: subject → state → context → action → feedback." style="display:inline-flex;align-items:center;gap:6px;font-size:10.5px;color:var(--text-2);cursor:pointer;">
+                  <input type="checkbox" class="pf-flag" data-feature="roleReorder" checked style="margin:0;">
+                  <span>Role reorder</span>
+                </label>
+                <label class="pf-toggle" title="Composer backfill: re-add Selected Components the composer LLM silently dropped." style="display:inline-flex;align-items:center;gap:6px;font-size:10.5px;color:var(--text-2);cursor:pointer;">
+                  <input type="checkbox" class="pf-flag" data-feature="composerBackfill" checked style="margin:0;">
+                  <span>Composer backfill</span>
+                </label>
+                <label class="pf-toggle" title="Mandatory injection: surface-required chrome (status-bar / header) added if LLM didn't pick it." style="display:inline-flex;align-items:center;gap:6px;font-size:10.5px;color:var(--text-2);cursor:pointer;">
+                  <input type="checkbox" class="pf-flag" data-feature="mandatoryInject" checked style="margin:0;">
+                  <span>Mandatory inject</span>
+                </label>
+                <label class="pf-toggle" title="Context-aware injection: morning → calendar, driving → navigation, etc." style="display:inline-flex;align-items:center;gap:6px;font-size:10.5px;color:var(--text-2);cursor:pointer;">
+                  <input type="checkbox" class="pf-flag" data-feature="contextInject" checked style="margin:0;">
+                  <span>Context inject</span>
+                </label>
+              </div>
+              <div id="pipelineTimingPanel" style="margin-top:10px;padding:8px 10px;border-radius:6px;background:rgba(0,0,0,0.25);border:1px solid var(--divider);font-family:ui-monospace,Consolas,monospace;font-size:10.5px;color:var(--text-3);line-height:1.55;display:none;">
+                <div style="font-weight:600;color:var(--text-2);margin-bottom:4px;">Last run</div>
+                <div id="pipelineTimingRows"></div>
+              </div>
             </details>
+
+            <!-- 고급: userSupplements (JSON) panel removed from the UI —
+                 it was an internal pre-merge JSON injector that only
+                 advanced operators ever used. The reading code in
+                 app/scenes.js pipelineGenerate() safely handles a
+                 missing #genUserSupplements element (null check), so
+                 nothing breaks. To restore it, paste the original
+                 <details> block back here. -->
 
             <button id="autoIterStopBtn" onclick="autoIterStop()" style="display:none;padding:6px 12px;border-radius:8px;background:rgba(239,68,68,0.15);color:#FCA5A5;border:1px solid rgba(239,68,68,0.35);font-size:11px;font-weight:600;cursor:pointer;">
               Stop
@@ -755,6 +831,102 @@
         <input type="checkbox" id="genMotion" checked style="display:none;">
         <input type="checkbox" id="genStagger" checked style="display:none;">
         <input type="checkbox" id="genGenStatic" style="display:none;">
+
+        <!-- Refine workflow — moved from its own sidebar tab into this
+             Generate panel as a default-closed <details>. Mental model:
+             generate → result → "I want to fix this" → click to unfold
+             → 4-step refine. All Refine JS (analyzeRefinement / planPatches /
+             applyPatches / acceptRefinement etc) operate on these
+             elements transparently — they're addressed by id, so the
+             new parent doesn't matter. -->
+        <details id="refineInlineDetails" style="margin-top:14px;border-radius:10px;border:1px solid var(--divider);background:rgba(255,255,255,0.02);padding:8px 10px;">
+          <summary style="cursor:pointer;user-select:none;font-size:11px;color:var(--text-2);font-weight:600;display:flex;align-items:center;gap:6px;">
+            <span>Refine this output</span>
+            <span style="font-size:10px;color:var(--text-3);font-weight:400;">feedback → patches → compare</span>
+          </summary>
+          <div style="margin-top:12px;">
+
+            <!-- Auto-Refine Loop Control -->
+            <div id="autoRefineBox" style="background:var(--surface);border:1px solid var(--divider);border-radius:10px;padding:10px 12px;margin-bottom:12px;">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+                <div style="font-size:12px;font-weight:600;color:var(--text);">Auto Refine Loop</div>
+                <div style="font-size:10px;color:var(--text-3);">analyze → patch → re-evaluate</div>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <label style="font-size:11px;color:var(--text-2);">Iterations</label>
+                <input id="autoRefineCount" type="number" min="0" max="5" step="1" value="0"
+                  style="width:56px;padding:6px 8px;border-radius:8px;border:1px solid var(--divider);background:var(--bg);color:var(--text);font-size:13px;text-align:center;font-family:var(--font);">
+                <button class="topbar-btn primary" id="autoRefineBtn" style="flex:1;padding:8px;font-size:11px;" onclick="runAutoRefine()">Start Auto Refine</button>
+              </div>
+              <div id="autoRefineStatus" style="font-size:11px;color:var(--text-3);margin-top:6px;min-height:14px;"></div>
+            </div>
+
+            <!-- Step 1: Feedback Input -->
+            <div class="refine-step visible" id="refineStep1">
+              <div class="refine-step-header">
+                <div class="refine-step-num">1</div>
+                <div class="refine-step-title">Describe what to improve</div>
+              </div>
+              <textarea class="refine-feedback" id="refineFeedback" placeholder="e.g. The spacing between cards feels too tight, and the title doesn't stand out enough..."></textarea>
+              <div class="refine-tags" id="refineTags">
+                <button class="refine-tag" data-issue="spacing" onclick="toggleRefineTag(this)">Spacing</button>
+                <button class="refine-tag" data-issue="density" onclick="toggleRefineTag(this)">Density</button>
+                <button class="refine-tag" data-issue="hierarchy" onclick="toggleRefineTag(this)">Hierarchy</button>
+                <button class="refine-tag" data-issue="alignment" onclick="toggleRefineTag(this)">Alignment</button>
+                <button class="refine-tag" data-issue="sizing" onclick="toggleRefineTag(this)">Sizing</button>
+                <button class="refine-tag" data-issue="readability" onclick="toggleRefineTag(this)">Readability</button>
+                <button class="refine-tag" data-issue="consistency" onclick="toggleRefineTag(this)">Consistency</button>
+                <button class="refine-tag" data-issue="semantic" onclick="toggleRefineTag(this)">Semantic</button>
+                <button class="refine-tag" data-issue="interaction" onclick="toggleRefineTag(this)">Flow</button>
+              </div>
+              <button class="topbar-btn primary" style="width:100%;padding:10px;margin-top:10px;font-size:12px;" onclick="analyzeRefinement()">Analyze Issues</button>
+            </div>
+
+            <!-- Step 2: Issues Found -->
+            <div class="refine-step" id="refineStep2">
+              <div class="refine-step-header">
+                <div class="refine-step-num">2</div>
+                <div class="refine-step-title">Issues identified</div>
+              </div>
+              <div id="refineIssuesList"></div>
+              <button class="topbar-btn primary" style="width:100%;padding:10px;margin-top:8px;font-size:12px;" onclick="planRefinementPatches()">Plan Patches</button>
+            </div>
+
+            <!-- Step 3: Patch Plan -->
+            <div class="refine-step" id="refineStep3">
+              <div class="refine-step-header">
+                <div class="refine-step-num">3</div>
+                <div class="refine-step-title">Patch plan</div>
+              </div>
+              <div id="refinePatchList"></div>
+              <button class="topbar-btn primary" style="width:100%;padding:10px;margin-top:8px;font-size:12px;" onclick="applyRefinementPatches()">Apply Patches</button>
+            </div>
+
+            <!-- Step 4: Compare & Decide -->
+            <div class="refine-step" id="refineStep4">
+              <div class="refine-step-header">
+                <div class="refine-step-num">4</div>
+                <div class="refine-step-title">Review changes</div>
+              </div>
+              <button class="topbar-btn" style="width:100%;padding:10px;font-size:12px;margin-bottom:8px;" onclick="showRefineComparison()">Show Before / After</button>
+              <div id="refineSummary" style="font-size:12px;color:var(--text-2);line-height:1.5;margin-bottom:8px;"></div>
+              <div class="refine-decision">
+                <button class="topbar-btn primary" onclick="acceptRefinement()">Accept</button>
+                <button class="topbar-btn" onclick="rejectRefinement()">Reject</button>
+                <button class="topbar-btn" onclick="revertRefinement()">Revert</button>
+              </div>
+            </div>
+
+            <!-- Critic Panel (populated by agent) -->
+            <div id="criticPanel"></div>
+
+            <!-- Save to Evolve / Reset -->
+            <div style="margin-top:12px;border-top:1px solid var(--divider);padding-top:10px;display:flex;gap:6px;">
+              <button class="topbar-btn" style="flex:1;font-size:11px;padding:8px;background:rgba(102,187,106,0.12);color:#66BB6A;border-color:rgba(102,187,106,0.2);" onclick="saveToEvolve()" id="btnSaveEvolve">Save to Evolve</button>
+              <button class="topbar-btn" style="flex:1;font-size:11px;padding:8px;" onclick="resetRefinement()">Reset</button>
+            </div>
+          </div>
+        </details>
       </div>
 
       <!-- PANEL 6: DESIGN (Combined: Hierarchy + Scene + Components + Layout + Colors + Motion) -->
@@ -774,10 +946,6 @@
             <span class="design-section-arrow"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
           </div>
           <div class="design-section-body">
-            <div style="font-size:11px;color:var(--text-3);margin-bottom:10px;line-height:1.5;">
-              Visual grammar for the 4+2+1 orchestration. Each rule maps a state-packet field to how it should look on canvas.
-            </div>
-
             <!-- Group 1: Classification → Path A Layout Recipe -->
             <div class="panel-section" style="margin-bottom:12px;">
               <div class="panel-label" style="display:flex;align-items:center;justify-content:space-between;">
@@ -806,9 +974,6 @@
                   <span class="hr-val"><code>overlay-stack</code> · system-dialog overlay group on top of underlying surface (handoff, share, confirm)</span>
                 </div>
               </div>
-              <div style="margin-top:6px;font-size:10px;color:var(--text-3);font-style:italic;">
-                Path A's classifier (heuristic) tags scenarios with these patterns; the composer LLM is free to deviate when the scenario warrants. Container + group-role + child-role choices encode the pattern in canonical schema, NOT a named template.
-              </div>
             </div>
 
             <!-- Group 2: Attention Mode + Density Mode (Path A pipeline) -->
@@ -833,9 +998,6 @@
                   <span class="hr-arrow">&rarr;</span>
                   <span class="hr-val">density=expanded; compact gap, denser grid, many items</span>
                 </div>
-              </div>
-              <div style="margin-top:6px;font-size:10px;color:var(--text-3);font-style:italic;">
-                Path A's interpreter emits attentionMode + densityMode as separate enums; this panel shows the typical pairing rule.
               </div>
             </div>
 
@@ -942,57 +1104,23 @@
                   <span class="hr-val">overflow / settings shortcuts — subtle background, opacity 0.84</span>
                 </div>
               </div>
-              <div style="margin-top:6px;font-size:10px;color:var(--text-3);font-style:italic;">
-                Component role + group role together drive css/genui.css's role-aware styling. Set by the composer LLM, validated by validateLayout().
-              </div>
             </div>
 
-            <!-- Group 5: Governance Triggers → Auto UI Additions -->
-            <div class="panel-section" style="margin-bottom:12px;">
-              <div class="panel-label" style="display:flex;align-items:center;justify-content:space-between;">
-                <span>Governance Triggers &rarr; Auto Additions</span>
-                <span style="font-size:9px;color:var(--text-3);font-weight:400;letter-spacing:0.3px;">planned</span>
-              </div>
-              <div class="hierarchy-rule-list" style="display:flex;flex-direction:column;gap:4px;">
-                <div class="hierarchy-rule hr-planned">
-                  <span class="hr-key">explanation_needed</span>
-                  <span class="hr-arrow">&rarr;</span>
-                  <span class="hr-val">auto-append "Why this?" link to layout bottom</span>
-                </div>
-                <div class="hierarchy-rule hr-planned">
-                  <span class="hr-key">override_needed</span>
-                  <span class="hr-arrow">&rarr;</span>
-                  <span class="hr-val">auto-append "Not now" button to action-row</span>
-                </div>
-                <div class="hierarchy-rule hr-planned">
-                  <span class="hr-key">handoff_required</span>
-                  <span class="hr-arrow">&rarr;</span>
-                  <span class="hr-val">device badge &#128241;&#8594;&#8986; on relevant card</span>
-                </div>
-                <div class="hierarchy-rule hr-planned">
-                  <span class="hr-key">high_impact_decision</span>
-                  <span class="hr-arrow">&rarr;</span>
-                  <span class="hr-val">confirm scrim + biometric prompt gate</span>
-                </div>
-              </div>
-              <div style="margin-top:6px;font-size:10px;color:var(--text-3);font-style:italic;">
-                These rules are declared but not yet auto-applied to the canvas. Edit affordance coming in R4.
-              </div>
-            </div>
-
-            <!-- Group 6: Pipeline Atomic Bridge (Path A) -->
-            <div class="panel-section" style="margin-bottom:6px;">
-              <div class="panel-label" style="display:flex;align-items:center;justify-content:space-between;">
-                <span>Pipeline Atomic Bridge</span>
+            <!-- Group 6: Pipeline Atomic Bridge (Path A) — foldable.
+                 Long table of 21 mappings; default folded so the
+                 Hierarchy view stays scannable. Click the summary
+                 row to expand. Default browser ▸ marker is hidden;
+                 we render our own chevron that rotates on [open]. -->
+            <details class="panel-section panel-section--foldable" style="margin-bottom:6px;">
+              <summary class="panel-label" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;list-style:none;">
+                <span style="display:inline-flex;align-items:center;gap:6px;">
+                  <span class="panel-foldable-chev" aria-hidden="true" style="display:inline-block;width:8px;font-size:9px;color:var(--text-3);transition:transform 0.15s ease;">&#9656;</span>
+                  <span>Pipeline Atomic Bridge</span>
+                </span>
                 <span style="font-size:9px;color:var(--text-3);font-weight:400;letter-spacing:0.3px;">21 mappings</span>
-              </div>
-              <div style="font-size:10px;color:var(--text-3);margin-bottom:6px;line-height:1.45;">
-                Path A's selector emits componentIds directly from <code>component_registry.json</code>. The renderer (<code>app/scenes.js</code>) routes specific IDs through Path B's <code>renderAtomicForRole()</code> for richer One UI rendering. Defined in <code>PIPELINE_CHROME_ATOMIC_ROLE</code> + <code>PIPELINE_BODY_ATOMIC_ROLE</code>.
-              </div>
-
+              </summary>
               <!-- Chrome bridge — absolute-positioned into device frame zones -->
-              <div style="font-size:9px;color:var(--text-3);font-weight:600;letter-spacing:0.3px;margin:4px 0 4px;">CHROME BRIDGE — 6 mappings (zone-positioned)</div>
-              <div class="hierarchy-rule-list" style="display:flex;flex-direction:column;gap:4px;">
+              <div class="hierarchy-rule-list" style="display:flex;flex-direction:column;gap:4px;margin-top:6px;">
                 <div class="hierarchy-rule">
                   <span class="hr-key">container.status-bar-app</span>
                   <span class="hr-arrow">&rarr;</span>
@@ -1105,10 +1233,7 @@
                 </div>
               </div>
 
-              <div style="margin-top:8px;font-size:10px;color:var(--text-3);font-style:italic;">
-                Components NOT in this bridge render via their own template in <code>app/templates.js</code> (or fall through to the registry-fallback stub).
-              </div>
-            </div>
+            </details>
 
           </div>
         </div>
@@ -1585,92 +1710,100 @@
 
       </div>
 
-      <!-- PANEL 7: REFINE -->
+      <!-- PANEL 7: MLP PROTOTYPE — visual showcase, not reasoning.
+           Replaces the old Refine panel (Refine moved into Generate as a
+           default-closed details). MLPs = Most Lovable Product
+           prototypes: hand-curated visual artifacts the team wants to
+           share / pitch. Each card opens its prototype in a new tab. -->
       <div class="panel" id="panel-7">
 
-        <!-- Auto-Refine Loop Control -->
-        <div id="autoRefineBox" style="background:var(--surface);border:1px solid var(--divider);border-radius:10px;padding:10px 12px;margin-bottom:12px;">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
-            <div style="font-size:12px;font-weight:600;color:var(--text);">Auto Refine Loop</div>
-            <div style="font-size:10px;color:var(--text-3);">analyze → patch → re-evaluate</div>
-          </div>
-          <div style="display:flex;align-items:center;gap:8px;">
-            <label style="font-size:11px;color:var(--text-2);">Iterations</label>
-            <input id="autoRefineCount" type="number" min="0" max="5" step="1" value="0"
-              style="width:56px;padding:6px 8px;border-radius:8px;border:1px solid var(--divider);background:var(--bg);color:var(--text);font-size:13px;text-align:center;font-family:var(--font);">
-            <button class="topbar-btn primary" id="autoRefineBtn" style="flex:1;padding:8px;font-size:11px;" onclick="runAutoRefine()">Start Auto Refine</button>
-          </div>
-          <div id="autoRefineStatus" style="font-size:11px;color:var(--text-3);margin-top:6px;min-height:14px;"></div>
-        </div>
+        <!-- Header trimmed: description ("Most Lovable Product — visual
+             prototypes worth showing.") and "+ Add" button removed per
+             user request. Adding prototypes is a code edit on
+             #mlpGallery, not a runtime action, so the button was
+             misleading. Just the label remains. -->
+        <div class="panel-label" style="margin-bottom:12px;">MLP Prototype</div>
 
-        <!-- Step 1: Feedback Input -->
-        <div class="refine-step visible" id="refineStep1">
-          <div class="refine-step-header">
-            <div class="refine-step-num">1</div>
-            <div class="refine-step-title">Describe what to improve</div>
+        <!-- 3-column visual gallery. Tab switch to MLP Prototype widens
+             the sidebar (body.tab-mlp-active rule in css/genui.css) so
+             the 3-col grid breathes and all 5 tiles are visible without
+             scrolling. Each tile is a colored hero block themable per
+             slot via inline gradient. Clicks are no-op until paired
+             with real prototype URLs / Figma frames / video links. -->
+        <div class="mlp-gallery" id="mlpGallery" style="display:grid;grid-template-columns:repeat(3, minmax(0, 1fr));gap:10px;">
+          <div class="mlp-tile" tabindex="0" data-mlp-id="cooking-assistant"
+               style="aspect-ratio: 9 / 12; border-radius:14px; overflow:hidden; position:relative; cursor:pointer; background:linear-gradient(160deg,#FF8A8A,#F36F6F 50%,#A8327B); border:1px solid rgba(255,255,255,0.08);">
+            <div style="position:absolute; inset:auto 10px 10px 10px; color:#fff;">
+              <div style="font-size:9px;font-weight:600;letter-spacing:0.4px;opacity:0.85;text-transform:uppercase;">Cooking</div>
+              <div style="font-size:13px;font-weight:700;letter-spacing:-0.2px;line-height:1.2;">Cooking Assistant</div>
+            </div>
           </div>
-          <textarea class="refine-feedback" id="refineFeedback" placeholder="e.g. The spacing between cards feels too tight, and the title doesn't stand out enough..."></textarea>
-          <div class="refine-tags" id="refineTags">
-            <button class="refine-tag" data-issue="spacing" onclick="toggleRefineTag(this)">Spacing</button>
-            <button class="refine-tag" data-issue="density" onclick="toggleRefineTag(this)">Density</button>
-            <button class="refine-tag" data-issue="hierarchy" onclick="toggleRefineTag(this)">Hierarchy</button>
-            <button class="refine-tag" data-issue="alignment" onclick="toggleRefineTag(this)">Alignment</button>
-            <button class="refine-tag" data-issue="sizing" onclick="toggleRefineTag(this)">Sizing</button>
-            <button class="refine-tag" data-issue="readability" onclick="toggleRefineTag(this)">Readability</button>
-            <button class="refine-tag" data-issue="consistency" onclick="toggleRefineTag(this)">Consistency</button>
-            <button class="refine-tag" data-issue="semantic" onclick="toggleRefineTag(this)">Semantic</button>
-            <button class="refine-tag" data-issue="interaction" onclick="toggleRefineTag(this)">Flow</button>
+          <div class="mlp-tile" tabindex="0" data-mlp-id="health-snapshot"
+               style="aspect-ratio: 9 / 12; border-radius:14px; overflow:hidden; position:relative; cursor:pointer; background:linear-gradient(160deg,#7BC8A4,#1D9C7C 50%,#0B5C66); border:1px solid rgba(255,255,255,0.08);">
+            <div style="position:absolute; inset:auto 10px 10px 10px; color:#fff;">
+              <div style="font-size:9px;font-weight:600;letter-spacing:0.4px;opacity:0.85;text-transform:uppercase;">Health</div>
+              <div style="font-size:13px;font-weight:700;letter-spacing:-0.2px;line-height:1.2;">Daily Snapshot</div>
+            </div>
           </div>
-          <button class="topbar-btn primary" style="width:100%;padding:10px;margin-top:10px;font-size:12px;" onclick="analyzeRefinement()">Analyze Issues</button>
-        </div>
-
-        <!-- Step 2: Issues Found -->
-        <div class="refine-step" id="refineStep2">
-          <div class="refine-step-header">
-            <div class="refine-step-num">2</div>
-            <div class="refine-step-title">Issues identified</div>
+          <div class="mlp-tile" tabindex="0" data-mlp-id="navigation-glance"
+               style="aspect-ratio: 9 / 12; border-radius:14px; overflow:hidden; position:relative; cursor:pointer; background:linear-gradient(160deg,#B69EF0,#7B68EE 55%,#352970); border:1px solid rgba(255,255,255,0.08);">
+            <div style="position:absolute; inset:auto 10px 10px 10px; color:#fff;">
+              <div style="font-size:9px;font-weight:600;letter-spacing:0.4px;opacity:0.85;text-transform:uppercase;">Driving</div>
+              <div style="font-size:13px;font-weight:700;letter-spacing:-0.2px;line-height:1.2;">Navigation Glance</div>
+            </div>
           </div>
-          <div id="refineIssuesList"></div>
-          <button class="topbar-btn primary" style="width:100%;padding:10px;margin-top:8px;font-size:12px;" onclick="planRefinementPatches()">Plan Patches</button>
-        </div>
-
-        <!-- Step 3: Patch Plan -->
-        <div class="refine-step" id="refineStep3">
-          <div class="refine-step-header">
-            <div class="refine-step-num">3</div>
-            <div class="refine-step-title">Patch plan</div>
+          <div class="mlp-tile" tabindex="0" data-mlp-id="messages-quick"
+               style="aspect-ratio: 9 / 12; border-radius:14px; overflow:hidden; position:relative; cursor:pointer; background:linear-gradient(160deg,#F5C16C,#E0913E 50%,#7A3B1C); border:1px solid rgba(255,255,255,0.08);">
+            <div style="position:absolute; inset:auto 10px 10px 10px; color:#fff;">
+              <div style="font-size:9px;font-weight:600;letter-spacing:0.4px;opacity:0.85;text-transform:uppercase;">Messages</div>
+              <div style="font-size:13px;font-weight:700;letter-spacing:-0.2px;line-height:1.2;">Quick Reply</div>
+            </div>
           </div>
-          <div id="refinePatchList"></div>
-          <button class="topbar-btn primary" style="width:100%;padding:10px;margin-top:8px;font-size:12px;" onclick="applyRefinementPatches()">Apply Patches</button>
-        </div>
-
-        <!-- Step 4: Compare & Decide -->
-        <div class="refine-step" id="refineStep4">
-          <div class="refine-step-header">
-            <div class="refine-step-num">4</div>
-            <div class="refine-step-title">Review changes</div>
+          <div class="mlp-tile" tabindex="0" data-mlp-id="lock-glance"
+               style="aspect-ratio: 9 / 12; border-radius:14px; overflow:hidden; position:relative; cursor:pointer; background:linear-gradient(160deg,#5BC0EB,#2A7DAB 50%,#0C2841); border:1px solid rgba(255,255,255,0.08);">
+            <div style="position:absolute; inset:auto 10px 10px 10px; color:#fff;">
+              <div style="font-size:9px;font-weight:600;letter-spacing:0.4px;opacity:0.85;text-transform:uppercase;">Lock Screen</div>
+              <div style="font-size:13px;font-weight:700;letter-spacing:-0.2px;line-height:1.2;">Morning Glance</div>
+            </div>
           </div>
-          <button class="topbar-btn" style="width:100%;padding:10px;font-size:12px;margin-bottom:8px;" onclick="showRefineComparison()">Show Before / After</button>
-          <div id="refineSummary" style="font-size:12px;color:var(--text-2);line-height:1.5;margin-bottom:8px;"></div>
-          <div class="refine-decision">
-            <button class="topbar-btn primary" onclick="acceptRefinement()">Accept</button>
-            <button class="topbar-btn" onclick="rejectRefinement()">Reject</button>
-            <button class="topbar-btn" onclick="revertRefinement()">Revert</button>
-          </div>
-        </div>
-
-        <!-- Critic Panel (populated by agent) -->
-        <div id="criticPanel"></div>
-
-        <!-- Save to Evolve / Reset -->
-        <div style="margin-top:12px;border-top:1px solid var(--divider);padding-top:10px;display:flex;gap:6px;">
-          <button class="topbar-btn" style="flex:1;font-size:11px;padding:8px;background:rgba(102,187,106,0.12);color:#66BB6A;border-color:rgba(102,187,106,0.2);" onclick="saveToEvolve()" id="btnSaveEvolve">Save to Evolve</button>
-          <button class="topbar-btn" style="flex:1;font-size:11px;padding:8px;" onclick="resetRefinement()">Reset</button>
+          <!-- Empty + tile removed — its click handler targeted the
+               removed mlpAddBtn so it became inert. Placeholder footer
+               note ("Tiles are placeholders…") also removed; wiring is
+               documented in the panel comment above. -->
         </div>
       </div>
 
     </div>
   </div>
+
+  <!-- Customize side panel — slides in from the right with an iframe
+       pointing at /customize. The iframe is loaded lazily on first
+       open so a user who never clicks Customize doesn't pay for it.
+       Sits ABOVE the canvas via z-index and absolutely positioned
+       within .main (which has position:relative). Close by the × in
+       the header or by toggling the pencil icon again. -->
+  <!-- Initial-state / open-state styles live in css/genui.css (look for
+       #customizeSidePanel). Putting them in CSS instead of inline is
+       intentional: inline styles have specificity 1,0,0,0 which would
+       beat the `.open` rule and leave the panel stuck off-screen. -->
+  <aside id="customizeSidePanel" aria-hidden="true">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--divider);flex-shrink:0;background:rgba(10,10,12,0.4);">
+      <span style="font-size:12px;font-weight:700;color:var(--text-2);text-transform:uppercase;letter-spacing:0.5px;">Customize</span>
+      <button onclick="toggleCustomizePanel(false)" aria-label="Close customize panel"
+              style="background:none;border:0;cursor:pointer;color:var(--text-3);font-size:20px;line-height:1;padding:4px 8px;border-radius:6px;transition:color 0.15s,background 0.15s;"
+              onmouseover="this.style.color='var(--text)';this.style.background='rgba(255,255,255,0.05)';"
+              onmouseout="this.style.color='var(--text-3)';this.style.background='none';">×</button>
+    </div>
+    <iframe id="customizePanelFrame" title="Theme Customizer" style="flex:1;border:0;width:100%;background:var(--pg-bg,#0a0a0c);" loading="lazy"></iframe>
+  </aside>
+
+  <!-- Sidebar collapse toggle — sits between sidebar and canvas.
+       Click to slide sidebar out / back in. State persists to
+       localStorage (oneui-sidebar-collapsed). -->
+  <button class="sidebar-collapse-toggle" id="sidebarCollapseToggle" onclick="toggleSidebar()"
+          title="Hide / show the sidebar" aria-label="Toggle sidebar">
+    <span id="sidebarCollapseChevron">‹</span>
+  </button>
 
   <!-- CANVAS -->
   <div style="flex:1;display:flex;flex-direction:column;min-width:0;">
@@ -1737,7 +1870,12 @@
 <script src="app/scenes.js"></script>
 <script src="app/scene-inspector.js"></script>
 <script src="app/cached-screens.js"></script>
-<script src="app/ui-panels.js"></script>
+<!-- Cache-buster v=2026-05-12-customize-panel: forces browsers to
+     fetch the latest ui-panels.js. The previous version cached the
+     `frame.src = '/customize'` line which 404'd on the Python static
+     server (no /customize → /customize.html alias). New version uses
+     the .html extension so it works on both node and Python servers. -->
+<script src="app/ui-panels.js?v=2026-05-12-mlp-wide"></script>
 <script src="app/main.js"></script>
 </body>
 </html>

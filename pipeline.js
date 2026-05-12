@@ -2027,7 +2027,28 @@ function validateLayout(layoutPlan, uiState, plan, referenceLayout) {
 //  violations (still canonical rows; rollup happens at the orchestrator).
 // ---------------------------------------------------------------------------
 
-async function runComposeLayout({ planningPacket, plan, llmCall, viewport, scenarioText, fastMode }) {
+// Resolve a features object into the canonical { flag: boolean } map.
+// Defaults are ON so existing callers (no features object) keep
+// pre-toggle behavior; explicit `false` turns a feature off.
+function _resolveFeatures(input) {
+  const f = (input && typeof input === 'object') ? input : {};
+  return {
+    contentBag:        f.contentBag         !== false,
+    rag:               f.rag                !== false,
+    explain:           f.explain            !== false,
+    dedup:             f.dedup              !== false,
+    typeCap:           f.typeCap            !== false,
+    autoGrid:          f.autoGrid           !== false,
+    chromeMigration:   f.chromeMigration    !== false,
+    roleReorder:       f.roleReorder        !== false,
+    composerBackfill:  f.composerBackfill   !== false,
+    mandatoryInject:   f.mandatoryInject    !== false,
+    contextInject:     f.contextInject      !== false
+  };
+}
+
+async function runComposeLayout({ planningPacket, plan, llmCall, viewport, scenarioText, fastMode, features }) {
+  const _F = _resolveFeatures(features);
   if (!llmCall)        throw new Error('runComposeLayout requires llmCall(systemPrompt, userMessage)');
   if (!planningPacket) throw new Error('runComposeLayout requires planningPacket');
   if (!plan)           throw new Error('runComposeLayout requires plan');
@@ -2142,7 +2163,8 @@ async function runComposeLayout({ planningPacket, plan, llmCall, viewport, scena
   // composed layout: any non-chrome child sitting in a chrome group
   // gets migrated to a content group (supporting if it exists, else
   // a new primary-task slot at the end).
-  if (composed.layoutPlan && Array.isArray(composed.layoutPlan.groups)) {
+  // Skippable via features.chromeMigration=false.
+  if (_F.chromeMigration && composed.layoutPlan && Array.isArray(composed.layoutPlan.groups)) {
     const planRoleByType = {};
     (plan.requiredComponents || []).forEach(c => {
       if (c.componentType && !planRoleByType[c.componentType]) {
@@ -2196,7 +2218,8 @@ async function runComposeLayout({ planningPacket, plan, llmCall, viewport, scena
   // backwards. Within a group, this stable-sorts children by role rank.
   // Chrome group is exempt (chrome has its own structural ordering
   // driven by the reference layout: status-bar → header → gesture-bar).
-  if (composed.layoutPlan && Array.isArray(composed.layoutPlan.groups)) {
+  // Skippable via features.roleReorder=false.
+  if (_F.roleReorder && composed.layoutPlan && Array.isArray(composed.layoutPlan.groups)) {
     const ROLE_RANK = { subject: 1, state: 2, context: 3, action: 4, feedback: 5, navigation: 6 };
     let reordered = 0;
     composed.layoutPlan.groups.forEach(g => {
@@ -2247,7 +2270,8 @@ async function runComposeLayout({ planningPacket, plan, llmCall, viewport, scena
     'fab',
     'chip'
   ]);
-  if (composed.layoutPlan && Array.isArray(composed.layoutPlan.groups)) {
+  // Skippable via features.autoGrid=false.
+  if (_F.autoGrid && composed.layoutPlan && Array.isArray(composed.layoutPlan.groups)) {
     let gridded = 0;
     composed.layoutPlan.groups.forEach(g => {
       if (g.role === 'chrome') return;
@@ -2291,7 +2315,8 @@ async function runComposeLayout({ planningPacket, plan, llmCall, viewport, scena
   // 4-child layouts. Here we deterministically append any missing plan
   // entries to an appropriate group with visibility="visible", so the
   // layout always reflects the selector's full intent.
-  if (composed.layoutPlan && Array.isArray(composed.layoutPlan.groups)) {
+  // Skippable via features.composerBackfill=false.
+  if (_F.composerBackfill && composed.layoutPlan && Array.isArray(composed.layoutPlan.groups)) {
     const groups = composed.layoutPlan.groups;
     const presentIds = new Set();
     groups.forEach(g => {
@@ -2412,8 +2437,9 @@ async function runInterpretAndNormalize({ scenarioText, llmCall, llmCallFast, fa
 //  STAGE 3 — runSelect (component selector + mandatory injection + validation)
 // ---------------------------------------------------------------------------
 
-async function runSelect({ scenarioText, interpretation, planningPacket, rawCombined, llmCall, embedCall, fastMode }) {
+async function runSelect({ scenarioText, interpretation, planningPacket, rawCombined, llmCall, embedCall, fastMode, features }) {
   if (!llmCall) throw new Error('runSelect requires llmCall');
+  const _F = _resolveFeatures(features);
   const scenario = scenarioText || '';
   const planningPacketRaw = rawCombined || planningPacket;
 
@@ -2437,7 +2463,8 @@ async function runSelect({ scenarioText, interpretation, planningPacket, rawComb
   // and pass it to buildPlannerPrompt() as an override — vocab still ends
   // up in the SYSTEM prompt (preserves the legacy attention pattern that
   // produces healthy UI output).
-  if (RAG_ENABLED && embedCall && COMPONENT_EMBEDDINGS) {
+  // Skippable per-request via features.rag=false (defaults follow env).
+  if (_F.rag && RAG_ENABLED && embedCall && COMPONENT_EMBEDDINGS) {
     try {
       const ui = uiStateForSelector || {};
       const queryParts = [
@@ -2605,7 +2632,10 @@ async function runSelect({ scenarioText, interpretation, planningPacket, rawComb
   function _alphanumOnly(s) {
     return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
   }
-  if (Array.isArray(plan.requiredComponents)) {
+  // Skippable via features.dedup=false (turning this off lets duplicate
+  // labels through — useful for measuring how often the LLM repeats vs
+  // how much the 4-tier dedup ladder catches).
+  if (_F.dedup && Array.isArray(plan.requiredComponents)) {
     const seenSig = new Set();
     const seenAlnumSig = new Set();
     const dedupSurvivors = [];
@@ -2680,7 +2710,8 @@ async function runSelect({ scenarioText, interpretation, planningPacket, rawComb
   // real Samsung One UI rarely has more than 3 identical-format widgets
   // on one surface. Cap at 3 per componentType. Drops are tail-first
   // (keep first 3 in plan order, drop rest).
-  if (Array.isArray(plan.requiredComponents)) {
+  // Skippable via features.typeCap=false.
+  if (_F.typeCap && Array.isArray(plan.requiredComponents)) {
     const TYPE_CAP = 3;
     const counts = {};
     const capSurvivors = [];
@@ -2709,7 +2740,11 @@ async function runSelect({ scenarioText, interpretation, planningPacket, rawComb
     }
   }
 
-  if (DesignMemory && DesignMemory.generatorMemory && uiStateForSelector) {
+  // Skippable via features.mandatoryInject=false. Surface-required
+  // chrome (status-bar / header etc) will then only show up if the LLM
+  // picked it on its own — useful to measure how often the LLM ignores
+  // the "every surface needs status-bar" rule.
+  if (_F.mandatoryInject && DesignMemory && DesignMemory.generatorMemory && uiStateForSelector) {
     const screens = DesignMemory.generatorMemory.screens || {};
     const screen  = screens[uiStateForSelector.baseSurface] || {};
     const mandatoryIds = screen.mandatoryComponents
@@ -2762,7 +2797,8 @@ async function runSelect({ scenarioText, interpretation, planningPacket, rawComb
   // driving, etc.) when the LLM's narrower task→slot mapping would
   // otherwise miss them. Each injection is gated on the component being
   // (a) not already picked, and (b) in the active semantic vocabulary.
-  if (uiStateForSelector && Array.isArray(uiStateForSelector.contextTags) && uiStateForSelector.contextTags.length) {
+  // Skippable via features.contextInject=false.
+  if (_F.contextInject && uiStateForSelector && Array.isArray(uiStateForSelector.contextTags) && uiStateForSelector.contextTags.length) {
     if (!Array.isArray(plan.requiredComponents)) plan.requiredComponents = [];
     const havePicked = new Set(plan.requiredComponents.map(c => c.componentType).filter(Boolean));
     const allowedVocab = new Set(allowedSemanticComponentTypes());
@@ -3119,12 +3155,15 @@ function applyContentSwap(plan, bag) {
 //  separately so each emits its own step_done event for progressive UI.
 // ---------------------------------------------------------------------------
 
-async function runPlan({ scenarioText, llmCall, llmCallFast, llmCallContentBag, embedCall, fastMode }) {
+async function runPlan({ scenarioText, llmCall, llmCallFast, llmCallContentBag, embedCall, fastMode, features }) {
+  const _F = _resolveFeatures(features);
   const ipn = await runInterpretAndNormalize({ scenarioText, llmCall, llmCallFast, fastMode });
 
   // Stages 3 (select) and 3.5 (content bag) fire in PARALLEL so the bag
   // adds zero critical-path latency. Stage 3 typically takes ~3–6 s on
   // gpt-5.4; the mini model bag returns in ~1–2 s, well inside that window.
+  // features.contentBag=false skips the bag call entirely (and the swap)
+  // — useful for A/B-testing how much the bag enriches outputs.
   const bagCall = llmCallContentBag || llmCallFast || llmCall;
   const [sel, bag] = await Promise.all([
     runSelect({
@@ -3134,18 +3173,22 @@ async function runPlan({ scenarioText, llmCall, llmCallFast, llmCallContentBag, 
       rawCombined:     ipn.rawCombined,
       llmCall,
       embedCall,
-      fastMode
+      fastMode,
+      features
     }),
-    runContentBag({
-      scenarioText,
-      planningPacket:  ipn.planningPacket,
-      interpretation:  ipn.interpretation,
-      llmCall:         bagCall,
-      fastMode
-    })
+    _F.contentBag
+      ? runContentBag({
+          scenarioText,
+          planningPacket:  ipn.planningPacket,
+          interpretation:  ipn.interpretation,
+          llmCall:         bagCall,
+          fastMode
+        })
+      : Promise.resolve(null)
   ]);
 
   // Swap is best-effort — runs after both calls resolve, before validation.
+  // Skipped automatically when contentBag is off (bag === null).
   if (bag) applyContentSwap(sel.plan, bag);
 
   const uiState = ipn.planningPacket.uiState || ipn.interpretation.uiState;

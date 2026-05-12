@@ -4369,6 +4369,18 @@ const server = http.createServer(async (req, res) => {
     // Activated by client when "Output log" checkbox is unchecked.
     const _fastMode = _body.fastMode === true;
 
+    // Per-request feature toggles. Client can disable individual
+    // pipeline steps to A/B test latency / quality contributions.
+    // Defaults: all on (so existing clients without `features` keep
+    // current behavior). Recognized keys are documented in
+    // pipeline.js _resolveFeatures + genui.html toggle panel.
+    const _features = (_body.features && typeof _body.features === 'object')
+      ? _body.features
+      : {};
+    // explain stage is gated independently of features.explain so we
+    // honor BOTH (a) the legacy fastMode flag and (b) explicit toggle.
+    const _explainOn = _features.explain !== false && !_fastMode;
+
     // Trim helper for fastMode — applied AFTER each step's output is
     // produced. Only mutates verbose arrays; structural fields stay.
     function _fastTrim(obj) {
@@ -4469,6 +4481,7 @@ const server = http.createServer(async (req, res) => {
       // After both resolve, applyContentSwap fills empty / duplicated slots
       // in the selector plan from bag entries.
       startStep(1);
+      const _bagOn = _features.contentBag !== false;
       const [selPair, bagResult] = await Promise.all([
         normalizer.withCollector(() => pipeline.runSelect({
           scenarioText:    _scenarioText,
@@ -4477,18 +4490,21 @@ const server = http.createServer(async (req, res) => {
           rawCombined:     ipnResult.rawCombined,
           llmCall:         (sys, user) => callOpenAI(sys, user, 0.3),
           embedCall:       callOpenAIEmbedding,
-          fastMode:        _fastMode
+          fastMode:        _fastMode,
+          features:        _features
         })),
-        pipeline.runContentBag({
-          scenarioText:   _scenarioText,
-          planningPacket: ipnResult.planningPacket,
-          interpretation: ipnResult.interpretation,
-          llmCall:        (sys, user) => callOpenAIContentBag(sys, user, 0.5),
-          fastMode:       _fastMode
-        }).catch(e => {
-          console.warn('[Pipeline] content bag stream failure (non-fatal):', e.message);
-          return null;
-        })
+        _bagOn
+          ? pipeline.runContentBag({
+              scenarioText:   _scenarioText,
+              planningPacket: ipnResult.planningPacket,
+              interpretation: ipnResult.interpretation,
+              llmCall:        (sys, user) => callOpenAIContentBag(sys, user, 0.5),
+              fastMode:       _fastMode
+            }).catch(e => {
+              console.warn('[Pipeline] content bag stream failure (non-fatal):', e.message);
+              return null;
+            })
+          : Promise.resolve(null)
       ]);
       const { result: selResult, fallbacks: selFallbacks } = selPair;
       if (bagResult) pipeline.applyContentSwap(selResult.plan, bagResult);
@@ -4517,7 +4533,8 @@ const server = http.createServer(async (req, res) => {
         llmCall:        (sys, user) => callOpenAICompose(sys, user, 0.55),
         viewport:       _viewport,
         scenarioText:   _scenarioText,
-        fastMode:       _fastMode
+        fastMode:       _fastMode,
+        features:       _features
       }));
       if (_fastMode) _fastTrim(layoutResult.composed);
       doneStep(2, {
@@ -4541,7 +4558,9 @@ const server = http.createServer(async (req, res) => {
       // list, which is the only structured signal that matters.
       let explanation = null;
       let explainFallbacks = { total: 0, byType: {}, events: [] };
-      if (!_fastMode) {
+      // explain runs when both gates open: legacy fastMode flag AND
+      // the new features.explain toggle. Either being off skips it.
+      if (_explainOn) {
         startStep(4);
         const explainRes = await normalizer.withCollector(() => pipeline.runExplain({
           scenarioText:     _scenarioText,
@@ -4611,6 +4630,7 @@ const server = http.createServer(async (req, res) => {
       // fastMode: A+B+C from the speed-vs-detail tradeoff. See the
       // /api/pipeline/full/stream endpoint above for full doc.
       const fastMode = body.fastMode === true;
+      const features = (body.features && typeof body.features === 'object') ? body.features : {};
 
       const planResult = await pipeline.runPlan({
         scenarioText,
@@ -4618,7 +4638,8 @@ const server = http.createServer(async (req, res) => {
         llmCallFast:       (sys, user) => callOpenAIFast(sys, user, 0.3),
         llmCallContentBag: (sys, user) => callOpenAIContentBag(sys, user, 0.5),
         embedCall:         callOpenAIEmbedding,
-        fastMode
+        fastMode,
+        features
       });
 
       const layoutResult = await pipeline.runComposeLayout({
@@ -4627,7 +4648,8 @@ const server = http.createServer(async (req, res) => {
         llmCall:        (sys, user) => callOpenAICompose(sys, user, 0.55),
         viewport,
         scenarioText,
-        fastMode
+        fastMode,
+        features
       });
 
       const validation = pipeline.rollupValidationResults({
@@ -4656,7 +4678,8 @@ const server = http.createServer(async (req, res) => {
         _fastTrimNS(layoutResult.composed);
       }
 
-      const explanation = fastMode ? null : await pipeline.runExplain({
+      const _explainOnNS = features.explain !== false && !fastMode;
+      const explanation = !_explainOnNS ? null : await pipeline.runExplain({
         scenarioText,
         uiState:          planResult.uiState,
         plan:             planResult.plan,

@@ -189,24 +189,182 @@ body { background:var(--bg); color:var(--text); font-family:var(--font); font-si
 .device-list-item.active .dev-li-check { opacity:1; }
 
 /* === MAIN LAYOUT === */
-.main { display:flex; flex:1; overflow:hidden; }
+.main { display:flex; flex:1; overflow:hidden; position:relative; }
 
 /* === SIDEBAR === */
 .sidebar {
   width:390px; flex-shrink:0; background:var(--sidebar-bg);
   border-right:1px solid var(--divider); display:flex; flex-direction:column; overflow:hidden;
+  transition: width 280ms cubic-bezier(0.2, 0, 0, 1), opacity 200ms ease, border-right-width 280ms ease;
+  /* position + higher z-index so the sidebar's solid background covers
+     the left half of the collapse toggle container — toggle's tab
+     appears to slide out from BEHIND the sidebar. */
+  position: relative;
+  z-index: 2;
 }
+.sidebar.collapsed {
+  width: 0;
+  opacity: 0;
+  border-right-width: 0;
+  pointer-events: none;
+}
+
+/* MLP Prototype tab: widen the sidebar so the 3-col tile gallery has
+   room to breathe and all 5 tiles are visible without scrolling.
+   `:not(.collapsed)` keeps the sidebar-collapse toggle working — when
+   the user collapses, this rule no longer matches and the .collapsed
+   rule above wins. The existing `transition: width 280ms` on .sidebar
+   makes the widening animate smoothly. */
+body.tab-mlp-active .sidebar:not(.collapsed) {
+  width: 600px;
+}
+
+/* Collapse toggle — blue accent bar sticking out from the sidebar's
+   right edge. High-contrast against the dark canvas so the user can
+   find it immediately. Vertically centered, transitions `left` in
+   sync with sidebar width so it stays anchored to the right border. */
+.sidebar-collapse-toggle {
+  position: absolute;
+  top: 50%;
+  left: 390px;
+  transform: translate(-50%, -50%);
+  width: 32px;
+  height: 72px;
+  /* Chevron pushed to the RIGHT edge of the container — the left half
+     of the container sits behind the sidebar (z-index lower than
+     .sidebar) so the icon stays visible on the canvas side and is
+     never clipped behind the sidebar background. */
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 6px;
+  box-sizing: border-box;
+  border: 1px solid rgba(3, 129, 254, 0.45);
+  border-left: 0;
+  border-radius: 0 12px 12px 0;
+  background: rgba(3, 129, 254, 0.18);
+  color: var(--primary, #0381FE);
+  font-family: var(--font);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  z-index: 1;                /* below .sidebar (z-index: 2) */
+  box-shadow: 2px 0 12px rgba(3, 129, 254, 0.22);
+  transition:
+    left 280ms cubic-bezier(0.2, 0, 0, 1),
+    color 0.15s ease,
+    background 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.15s ease;
+  user-select: none;
+}
+.sidebar-collapse-toggle:hover {
+  background: rgba(3, 129, 254, 0.32);
+  box-shadow: 2px 0 16px rgba(3, 129, 254, 0.45);
+  color: #fff;
+}
+.sidebar-collapse-toggle:active {
+  transform: translate(-50%, -50%) scale(0.96);
+}
+.sidebar.collapsed ~ .sidebar-collapse-toggle { left: 0; }
+
+/* Pencil icon inside the Theme picker pill — subtle by default,
+   brightens on hover so the affordance is discoverable without
+   shouting. Selector matches both the legacy <a> form and the new
+   <button> form so we don't lose styling when the markup switched
+   from open-new-tab to in-window side-panel. */
+#topbarThemePicker > a[href="/customize"],
+#topbarThemePicker > button.customize-open-btn { color: var(--text-3); }
+#topbarThemePicker > a[href="/customize"]:hover,
+#topbarThemePicker > button.customize-open-btn:hover { color: var(--text); }
+
+/* Customize side panel — fills the canvas area (everything except
+   the left sidebar). Wide layout activates customize.html's built-in
+   two-column grid (editor on left, live preview on right) so the
+   user sees attributes + preview side-by-side without scrolling.
+   IMPORTANT: keep these styles in CSS (not inline on the <aside>).
+   Inline styles have specificity 1,0,0,0 which would beat the
+   `.open` rule and leave the panel permanently off-screen.
+
+   Width formula: `100% - --sidebar-w`. The variable is set once at
+   :root (390px default), overridden when MLP tab widens the
+   sidebar (600px), and pinned to 0px when the user collapses the
+   sidebar via `:has(.sidebar.collapsed)` — so the panel grows to
+   fill the freed space automatically. */
+:root         { --sidebar-w: 390px; }
+body.tab-mlp-active { --sidebar-w: 600px; }
+body:has(.sidebar.collapsed) { --sidebar-w: 0px; }
+
+#customizeSidePanel {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: calc(100% - var(--sidebar-w, 390px));
+  max-width: none;
+  background: var(--sidebar-bg);
+  border-left: 1px solid var(--divider);
+  transform: translateX(100%);
+  transition: transform 280ms cubic-bezier(0.2, 0, 0, 1),
+              width    280ms cubic-bezier(0.2, 0, 0, 1);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  box-shadow: -16px 0 40px rgba(0, 0, 0, 0.50);
+}
+#customizeSidePanel.open { transform: translateX(0); }
+
+/* Pipeline features — Uncheck/Check-all toggle is part of the
+   summary, but only meaningful when the section is open. Hide it
+   when collapsed so the summary stays minimal. */
+#pipelineFeaturesDetails:not([open]) #pipelineFeaturesToggleAll {
+  display: none;
+}
+
+/* 고급 (userSupplements) details — hide the default disclosure
+   chevron / triangle so the row reads as a plain text header.
+   Covers both modern (::marker) and legacy WebKit pseudo-elements. */
+.genui-user-supplements-details > summary { list-style: none; }
+.genui-user-supplements-details > summary::marker { display: none; content: ''; }
+
+/* Foldable panel-section (Design tab → Hierarchy → Pipeline Atomic
+   Bridge). We render <details> instead of <div>; the default
+   ▶/▾ marker is suppressed and replaced with a custom span
+   (.panel-foldable-chev) that rotates 90° when [open]. Default
+   state is folded so the long 21-mapping table doesn't dominate
+   the Hierarchy view. */
+details.panel-section--foldable > summary { list-style: none; }
+details.panel-section--foldable > summary::-webkit-details-marker { display: none; }
+details.panel-section--foldable > summary::marker { display: none; content: ''; }
+details.panel-section--foldable[open] > summary .panel-foldable-chev { transform: rotate(90deg); }
+.genui-user-supplements-details > summary::-webkit-details-marker { display: none; }
 .sidebar-tabs {
   display:flex; border-bottom:1px solid var(--divider); flex-shrink:0;
 }
 .sidebar-tab {
-  flex:1; padding:10px 4px; text-align:center; font-size:10px; font-weight:600;
-  color:var(--text-3); cursor:pointer; border:none; background:none;
-  font-family:var(--font); transition:all 0.15s; text-transform:uppercase; letter-spacing:0.5px;
-  border-bottom:2px solid transparent;
+  flex:1;
+  padding:14px 6px;
+  text-align:center;
+  font-size:12px;
+  font-weight:600;
+  color:var(--text-3);
+  cursor:pointer;
+  border:none;
+  background:none;
+  font-family:var(--font);
+  text-transform:uppercase;
+  letter-spacing:0.5px;
+  border-bottom:3px solid transparent;
+  transition: color 0.15s ease, background 0.15s ease, border-bottom-color 0.15s ease;
 }
-.sidebar-tab:hover { color:var(--text-2); }
-.sidebar-tab.active { color:var(--primary); border-bottom-color:var(--primary); }
+.sidebar-tab:hover { color:var(--text-2); background:rgba(255,255,255,0.02); }
+.sidebar-tab.active {
+  color:var(--primary, #0381FE);
+  background:rgba(3,129,254,0.10);
+  border-bottom-color:var(--primary, #0381FE);
+  font-weight:700;
+}
 .sidebar-content { flex:1; overflow-y:auto; padding:16px; }
 .sidebar-content::-webkit-scrollbar { width:4px; }
 .sidebar-content::-webkit-scrollbar-thumb { background:rgba(255,255,255,0.15); border-radius:2px; }
@@ -506,10 +664,16 @@ body { background:var(--bg); color:var(--text); font-family:var(--font); font-si
 .brand-btn.active { border-color:var(--bc, var(--primary)); background:color-mix(in srgb, var(--bc, var(--primary)) 15%, transparent); color:var(--text); }
 .brand-dot { width:12px; height:12px; border-radius:50%; flex-shrink:0; }
 
-/* === COMPACT SCENARIO BUTTONS === */
+/* === COMPACT SCENARIO BUTTONS ===
+   min-height pinned so Screens (4-col grid) and Overlays (3-col grid)
+   render at the same height even though their column widths differ. */
 .scene-btn {
   display:flex; align-items:center; justify-content:center;
-  padding:11px 6px; border-radius:10px; border:1px solid var(--divider);
+  padding:0 6px;
+  min-height:38px;
+  height:38px;
+  box-sizing:border-box;
+  border-radius:10px; border:1px solid var(--divider);
   background:var(--surface); color:var(--text-2); font-family:var(--font);
   font-size:12px; font-weight:500; cursor:pointer;
   transition:all 0.15s; line-height:1.2;

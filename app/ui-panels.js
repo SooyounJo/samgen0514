@@ -6,6 +6,73 @@
 //  reference-image preview.
 // ============================================================================
 
+// === SIDEBAR COLLAPSE ===
+// Toggle the left sidebar in/out of view with a smooth slide. State
+// persists to localStorage so the user's preference (collapsed vs
+// expanded) survives reloads. Boot path also restores it on DOMContentLoaded
+// so the page doesn't flash open-then-collapsed.
+function toggleSidebar() {
+  const sidebar  = document.querySelector('.sidebar');
+  const chevron  = document.getElementById('sidebarCollapseChevron');
+  const toggle   = document.getElementById('sidebarCollapseToggle');
+  if (!sidebar) return;
+  const isCollapsed = sidebar.classList.toggle('collapsed');
+  if (chevron) chevron.textContent = isCollapsed ? '›' : '‹';
+  if (toggle)  toggle.title = isCollapsed ? 'Show sidebar' : 'Hide sidebar';
+  try { localStorage.setItem('oneui-sidebar-collapsed', isCollapsed ? '1' : '0'); } catch (_) {}
+}
+(function _restoreSidebarState() {
+  function apply() {
+    try {
+      const v = localStorage.getItem('oneui-sidebar-collapsed');
+      if (v !== '1') return;
+      const sidebar = document.querySelector('.sidebar');
+      const chevron = document.getElementById('sidebarCollapseChevron');
+      const toggle  = document.getElementById('sidebarCollapseToggle');
+      if (sidebar) sidebar.classList.add('collapsed');
+      if (chevron) chevron.textContent = '›';
+      if (toggle)  toggle.title = 'Show sidebar';
+    } catch (_) {}
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', apply);
+  else apply();
+})();
+
+// === CUSTOMIZE SIDE PANEL ===
+// Slides /customize in as an iframe on the right edge of .main
+// instead of popping a new browser tab. Lazy-loads the iframe src on
+// first open (so users who never click Customize don't pay for it).
+// `force` argument:
+//   undefined / null → toggle (default)
+//   true             → force open
+//   false            → force close
+// Exposed as window.toggleCustomizePanel because the pencil-icon
+// button uses an inline onclick attribute.
+function toggleCustomizePanel(force) {
+  const panel = document.getElementById('customizeSidePanel');
+  const frame = document.getElementById('customizePanelFrame');
+  if (!panel) return;
+  const wasOpen     = panel.classList.contains('open');
+  const shouldOpen  = (force === undefined || force === null) ? !wasOpen : !!force;
+  // Lazy iframe load — only when actually opening for the first time.
+  // Without this, the iframe boots customize.html on every page load
+  // even for users who never touch the pencil.
+  //
+  // We use the .html extension (not the clean /customize alias) so
+  // this works on both servers: node server.js maps /customize →
+  // /customize.html, but Python's http.server has no aliasing and
+  // would return "Error response" for /customize.
+  if (shouldOpen && frame && !frame.src) frame.src = '/customize.html';
+  panel.classList.toggle('open', shouldOpen);
+  panel.setAttribute('aria-hidden', shouldOpen ? 'false' : 'true');
+}
+// Close on ESC for keyboard parity with native browser dialogs.
+document.addEventListener('keydown', function (e) {
+  if (e.key !== 'Escape') return;
+  const panel = document.getElementById('customizeSidePanel');
+  if (panel && panel.classList.contains('open')) toggleCustomizePanel(false);
+});
+
 // === TABS ===
 function switchTab(idx, btn) {
   document.querySelectorAll('.sidebar-tab').forEach(t => t.classList.remove('active'));
@@ -20,10 +87,13 @@ function switchTab(idx, btn) {
   if (panel) panel.classList.add('active'); // Guard: panels may not exist on non-genui pages
 
   // Mark body with the active tab so CSS can gate tab-specific affordances.
-  // Interaction overlay (hover/selected boxes) should only appear in the
-  // Design tab (panel-6) — Generate / Refine show the raw UI without
-  // debug-style overlays on top.
+  // - tab-design-active (idx 6): enables the Design-tab interaction
+  //   overlay (hover/selected boxes on rendered components).
+  // - tab-mlp-active (idx 7): widens the sidebar to ~600px so the
+  //   3-col MLP tile gallery shows all prototypes without scrolling.
+  //   See `body.tab-mlp-active .sidebar:not(.collapsed)` in genui.css.
   document.body.classList.toggle('tab-design-active', idx === 6);
+  document.body.classList.toggle('tab-mlp-active',    idx === 7);
 }
 
 // Initial tab: default to Generate (panel-5). Deep-link via hash overrides.

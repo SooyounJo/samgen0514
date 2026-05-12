@@ -9,7 +9,115 @@
 // Version stamp — update when shipping visually-impactful changes so that
 // users can verify in DevTools whether they're running cached vs fresh JS.
 // Open the console after a hard refresh and look for the [oneui] log line.
-console.log('[oneui] scenes.js loaded · build 2026-05-01c · topbar reorder · theme transitions · agent-mode hidden');
+console.log('[oneui] scenes.js loaded · build 2026-05-11 · pipeline feature toggles + timing panel');
+
+// ---------------------------------------------------------------------------
+//  Pipeline feature toggles + timing panel boot helpers (top-level so
+//  they exist before pipelineGenerate or the step_done handler call
+//  them). Three responsibilities:
+//   1. Restore last-used toggle state from localStorage on DOM ready
+//      so the user's pipeline preferences survive page reloads.
+//   2. Reset the timing panel at the start of a run.
+//   3. Append one row per step_done event.
+//  Also keeps the "8 / 8 on" summary in the <summary> in sync as the
+//  user clicks checkboxes.
+// ---------------------------------------------------------------------------
+(function _pipelineFeaturesBoot() {
+  function _syncSummary() {
+    var flags = document.querySelectorAll('.pf-flag');
+    if (!flags.length) return;
+    var total = flags.length;
+    var on = 0;
+    flags.forEach(function (el) { if (el.checked) on++; });
+    var s = document.getElementById('pipelineFeaturesSummary');
+    if (s) s.textContent = on + ' / ' + total + ' on';
+    // Toggle-all button label flips based on current state — when at
+    // least one is on we offer "Uncheck all"; when none are on we
+    // offer "Check all". Single button = single click cost.
+    var t = document.getElementById('pipelineFeaturesToggleAll');
+    if (t) t.textContent = on > 0 ? 'Uncheck all' : 'Check all';
+  }
+  function _restoreSavedFlags() {
+    try {
+      var raw = localStorage.getItem('oneui-pipeline-features');
+      if (!raw) return;
+      var saved = JSON.parse(raw);
+      Object.keys(saved || {}).forEach(function (k) {
+        var el = document.querySelector('.pf-flag[data-feature="' + k + '"]');
+        if (el) el.checked = saved[k] !== false;
+      });
+    } catch (_) { /* ignore corruption */ }
+  }
+  function _wireFlagListeners() {
+    document.querySelectorAll('.pf-flag').forEach(function (el) {
+      el.addEventListener('change', _syncSummary);
+    });
+  }
+  // Global so the inline onclick on the summary button can reach it.
+  // Flips every pipeline feature flag in one click based on current
+  // state: any-on → all-off, all-off → all-on. Mirrors the change
+  // through _syncSummary (label + count) and persists the new state
+  // to localStorage so the next page load remembers it.
+  window.togglePipelineFeaturesAll = function () {
+    var flags = document.querySelectorAll('.pf-flag');
+    if (!flags.length) return;
+    var anyOn = false;
+    flags.forEach(function (el) { if (el.checked) anyOn = true; });
+    var nextState = !anyOn;   // any-on → off; all-off → on
+    var saved = {};
+    flags.forEach(function (el) {
+      el.checked = nextState;
+      var name = el.getAttribute('data-feature');
+      if (name) saved[name] = nextState;
+    });
+    try { localStorage.setItem('oneui-pipeline-features', JSON.stringify(saved)); } catch (_) {}
+    _syncSummary();
+  };
+  document.addEventListener('DOMContentLoaded', function () {
+    _restoreSavedFlags();
+    _syncSummary();
+    _wireFlagListeners();
+  });
+
+  // Timing panel helpers — called from the step_done handler.
+  window._oneuiResetTimingPanel = function () {
+    var panel = document.getElementById('pipelineTimingPanel');
+    var rows  = document.getElementById('pipelineTimingRows');
+    if (panel) panel.style.display = 'block';
+    if (rows)  rows.innerHTML = '<div style="color:var(--text-3);font-style:italic;">running…</div>';
+    window._oneuiTimingStart = Date.now();
+    window._oneuiTimingTotalMs = 0;
+  };
+  window._oneuiAppendTimingRow = function (step, elapsedMs, skipped) {
+    var rows = document.getElementById('pipelineTimingRows');
+    if (!rows) return;
+    if (rows.firstElementChild && rows.firstElementChild.style && rows.firstElementChild.style.fontStyle === 'italic') {
+      rows.innerHTML = '';
+    }
+    window._oneuiTimingTotalMs = (window._oneuiTimingTotalMs || 0) + (elapsedMs || 0);
+    var secs = ((elapsedMs || 0) / 1000).toFixed(1);
+    var mark = skipped ? '⨯' : '✓';
+    var label = step.replace(/_/g, ' ');
+    var line = document.createElement('div');
+    line.innerHTML = '<span style="color:' + (skipped ? 'var(--text-3)' : '#4ade80') + ';width:14px;display:inline-block;">' + mark + '</span> ' +
+                     '<span style="display:inline-block;min-width:88px;">' + _escapeHtmlSafe(label) + '</span>' +
+                     '<span style="color:var(--text-2);">' + (skipped ? 'skipped' : secs + 's') + '</span>';
+    rows.appendChild(line);
+    // Append a running total row, replacing any previous one.
+    var totals = rows.querySelector('.pf-total-row');
+    if (totals) totals.remove();
+    var totalsEl = document.createElement('div');
+    totalsEl.className = 'pf-total-row';
+    totalsEl.style.cssText = 'margin-top:6px;padding-top:6px;border-top:1px dashed var(--divider);color:var(--text-2);';
+    totalsEl.innerHTML = '<b>total</b> <span>' + (window._oneuiTimingTotalMs / 1000).toFixed(1) + 's</span>';
+    rows.appendChild(totalsEl);
+  };
+  function _escapeHtmlSafe(s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+      return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c];
+    });
+  }
+})();
 
 // ---------------------------------------------------------------------------
 //  Voice input (Korean) — Web Speech API
@@ -4319,10 +4427,24 @@ async function pipelineGenerateSingle(promptText) {
         return null;
       }
     }
-    const _reqBody = { scenario_text: prompt, fastMode: fastMode };
+    // Pipeline features — per-request toggles for each stage / post-fix.
+    // Reads every checkbox under #pipelineFeaturesDetails; default-on
+    // means an unchecked entry sets the feature to false, server then
+    // skips that step. State auto-persists to localStorage so the
+    // user's preferred profile survives reloads.
+    const _features = {};
+    document.querySelectorAll('.pf-flag').forEach(el => {
+      const name = el.getAttribute('data-feature');
+      if (name) _features[name] = !!el.checked;
+    });
+    try { localStorage.setItem('oneui-pipeline-features', JSON.stringify(_features)); } catch (_) {}
+
+    const _reqBody = { scenario_text: prompt, fastMode: fastMode, features: _features };
     if (userSupplements && typeof userSupplements === 'object') {
       _reqBody.userSupplements = userSupplements;
     }
+    // Reset the timing panel for the new run (events accumulate below).
+    if (typeof window._oneuiResetTimingPanel === 'function') window._oneuiResetTimingPanel();
     const resp = await fetch('/api/pipeline/full/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
@@ -4504,6 +4626,12 @@ function _handlePipelineEvent(ev, payload) {
       '\u2713 <b>Step ' + payload.idx + '/' + payload.total + '</b> &middot; ' +
       _escapeHtml(payload.step) + ' <span style="color:var(--text-3);">(' + secs + 's)</span>',
       '#4ade80');
+    // Append a row to the pipeline timing panel \u2014 gives the operator
+    // a per-stage breakdown so they can see exactly which features
+    // affected latency when toggling on/off.
+    if (typeof window._oneuiAppendTimingRow === 'function') {
+      window._oneuiAppendTimingRow(payload.step, payload.elapsedMs || 0, !!payload.skipped);
+    }
     var o = _pipelineOutput();
     if (!o) return;
 
