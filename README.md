@@ -1,636 +1,454 @@
 # Samsung One UI · GenUI
 
-> A generative UI system for One UI 8.5: type a scenario in plain language,
-> get a valid, themed, on-system Samsung screen rendered on a phone frame.
+> 자연어 시나리오를 입력하면, One UI 8.5 기반의 모바일 UI를
+> 자동 생성·검증·렌더링하는 Generative UI 파이프라인.
 
-The whole loop runs through a 5-stage LLM pipeline with a parallel
-content-enrichment side-call, an auto-iterating self-improvement engine,
-and a theme system that swaps CSS variables in real time across windows.
-
-### Framework overview
-
-| Area | What it is |
-|------|------------|
-| **Server** | `server.js` — HTTP, SSE pipeline, embeddings, `/api/themes`, improvement engine routes |
-| **Pipeline** | `pipeline.js` — interpret → select (RAG) + parallel content bag → compose → validate → explain |
-| **Renderer** | `app/scenes.js` (orchestration) + `app/surface-layout.js` + `app/templates.js` + `app/atomics.js` |
-| **GenUI shell** | `genui.html` — scenario UI, canvas, theme picker (`:root` theme apply) |
-| **Theme editor** | `customize.html` — scoped live preview (`#preview-theme-scope`); Save posts to `/api/themes` |
-| **Knowledge** | `figma-refs/*.json` — component registry, embeddings, themes, scenarios, rules |
-| **Self-improve** | `improvement_engine.js` + `/improve` — test suite, rule trials, `evolve.md` |
+핵심은 **"LLM이 생성하고, 규칙 기반 후처리와 검증이 품질을 통제하는
+구조"** 입니다. 단순히 AI가 화면을 "그리는" 방식이 아니라, AI 생성
+결과를 디자인 시스템·컴포넌트 레지스트리·레이아웃 규칙·검증 로직으로
+제어합니다.
 
 ---
 
-## Diagram legend
+## Framework overview
 
-All diagrams below share the same shape + color language, modeled on the
-FigJam *Diagram Basics* template. Stay oriented by mapping shape →
-role.
+| Area | 파일 | 역할 |
+|------|------|------|
+| **Server** | `server.js` | HTTP · SSE pipeline · embeddings · `/api/themes` · improvement engine |
+| **Pipeline** | `pipeline.js` | interpret → select (RAG) + parallel content bag → compose → validate → explain |
+| **Renderer** | `app/scenes.js` · `app/surface-layout.js` · `app/templates.js` · `app/atomics.js` | orchestration → group wrapper → atomic/template render |
+| **GenUI shell** | `genui.html` | 시나리오 입력 UI · canvas · theme picker · MLP gallery · pipeline feature toggles |
+| **Theme editor** | `customize.html` | `:root` CSS 변수 라이브 프리뷰 + 카드/스크린 두 미리보기 모드 |
+| **Knowledge** | `figma-refs/*.json` | component registry · embeddings · themes · test scenarios · rules |
+| **Self-improve** | `improvement_engine.js` · `/improve` | 테스트 시나리오 기반 룰 추출 · `evolve.md` 누적 |
 
-```mermaid
-%%{init: {'theme':'base', 'themeVariables': {
-  'fontFamily':'ui-sans-serif, system-ui, sans-serif',
-  'fontSize':'13px',
-  'lineColor':'#7C6F9C',
-  'background':'#F8F5FF'
-}}}%%
-flowchart LR
-  s([Start / End]):::start
-  p[Process]:::proc
-  d{Decision}:::dec
-  i[/Input · IO/]:::io
-  db[(Data store)]:::data
-  ai{{LLM call}}:::llm
-  drop([Drop / Reject]):::drop
+---
 
-  classDef start fill:#F3E5F5,stroke:#8E24AA,color:#212121
-  classDef proc  fill:#FAFAFA,stroke:#90A4AE,color:#212121
-  classDef dec   fill:#FFF8E1,stroke:#F9A825,color:#212121
-  classDef io    fill:#E3F2FD,stroke:#1E88E5,color:#212121
-  classDef data  fill:#E8F5E9,stroke:#43A047,color:#212121
-  classDef llm   fill:#EDE7F6,stroke:#7E57C2,color:#212121
-  classDef drop  fill:#FCE4EC,stroke:#D81B60,color:#212121
+## 1. 전체 개발 파이프라인 개요
+
+본 시스템은 사용자가 입력한 자연어 시나리오를 기반으로, 적절한 UI
+구조와 콘텐츠, 레이아웃을 자동 생성하고 검증한 뒤 브라우저 화면에
+렌더링하는 파이프라인입니다.
+
+```
+사용자 시나리오 입력
+  → 의도 해석 및 요구사항 정리
+  → UI 컴포넌트 선택
+  → 콘텐츠 보강
+  → 레이아웃 구성
+  → 규칙 기반 검증
+  → 설명 생성
+  → 브라우저 렌더링 및 Export
 ```
 
-| Shape | Color | Role |
-|---|---|---|
-| Pill `( )` | lavender | Start / End — terminal nodes |
-| Rectangle `[ ]` | cream | Process — deterministic step |
-| Diamond `{ }` | pale yellow | Decision — branch with Yes/No |
-| Parallelogram `[/ /]` | pale blue | Input / IO — data crossing a boundary |
-| Cylinder `[( )]` | pale green | Data store — registry, embeddings, themes |
-| Hexagon `{{ }}` | pale violet | LLM call — one OpenAI request |
-| Pill (warm) | pale pink | Drop / Reject — duplicate or invalid |
+개발 구조의 핵심은 두 가지입니다.
+
+1. **LLM** 은 사용자의 자연어를 해석하고 UI 구성안을 **생성** 합니다.
+2. **Deterministic rule (규칙 기반 후처리 + validator)** 가 결과를
+   정리하고 오류를 줄입니다.
 
 ---
 
-## At a glance
+## 2. 단계별 설명
 
-End-to-end request flow. Every hexagon is one OpenAI call.
+### 단계 1. 기획
 
-```mermaid
-%%{init: {'theme':'base', 'themeVariables': {
-  'fontFamily':'ui-sans-serif, system-ui, sans-serif',
-  'fontSize':'13px',
-  'lineColor':'#7C6F9C'
-}}}%%
-flowchart TD
-  user([User · scenario text]):::start
-  stream[/POST /api/pipeline/full/stream · SSE/]:::io
-  user --> stream
+**목적** — 시스템의 목적, 사용 시나리오, 화면 생성 범위, 주요 사용자
+경험 방향을 정의합니다. 현재 시스템은 Galaxy S26 기준의 모바일 UI
+(viewport `412×915`) 를 생성하는 구조입니다.
 
-  s1{{1 + 2 · Interpret + Normalize<br/>gpt-5.4-mini}}:::llm
-  stream --> s1
+**주요 작업**
 
-  fork{Promise.all<br/>fan-out}:::dec
-  s1 --> fork
+| 구분 | 내용 |
+|------|------|
+| 사용 시나리오 정의 | 어떤 상황에서 어떤 UI가 생성되어야 하는지 정의 |
+| 대상 디바이스 정의 | 기본 화면 크기, 해상도, 모바일 프레임 기준 정의 |
+| 생성 범위 정의 | 어떤 UI 컴포넌트와 레이아웃까지 자동 생성할지 결정 |
+| 품질 기준 정의 | 일관성, 가독성, 속도, 검증 기준 설정 |
+| 기능 토글 정의 | RAG, dedup, content bag, auto-grid, explain 등 기능별 on/off 구조 설정 |
 
-  s3{{3 · Select<br/>gpt-5.4 · RAG top-30}}:::llm
-  s35{{3.5 · Content Bag<br/>gpt-5.4-mini · parallel}}:::llm
-  fork --> s3
-  fork --> s35
+**클라이언트 확인 및 결정 사항**
 
-  swap[applyContentSwap<br/>fills empty / dup slots]:::proc
-  s3 --> swap
-  s35 --> swap
+| 결정 항목 | 클라이언트 확인 필요 |
+|----------|---------------------|
+| 주요 사용 시나리오 | 어떤 사용 맥락을 우선 지원할지 |
+| 대상 디바이스 | Galaxy S26 기준 유지 여부 또는 다른 viewport 추가 여부 |
+| 생성 품질 기준 | 빠른 생성 우선인지, 설명 포함 full mode 우선인지 |
+| UI 스타일 기준 | One UI 기반 유지 여부, 브랜드 테마 적용 범위 |
+| Export 범위 | HTML Export만 필요한지, 이미지/디자인 파일 연동도 필요한지 |
 
-  s4{{4 · Compose Layout<br/>gpt-5.4}}:::llm
-  swap --> s4
-
-  s5[5 · Validate<br/>plan + layout rollup]:::proc
-  s4 --> s5
-
-  fast{fastMode?}:::dec
-  s5 --> fast
-  s7{{7 · Explain<br/>gpt-5.4-mini}}:::llm
-  fast -- "no" --> s7
-  fast -- "yes (skip)" --> render
-
-  render[Renderer<br/>scenes.js + surface-layout.js]:::proc
-  s7 --> render
-  canvas([Phone frame · Galaxy S26]):::start
-  render --> canvas
-
-  classDef start fill:#F3E5F5,stroke:#8E24AA,color:#212121
-  classDef proc  fill:#FAFAFA,stroke:#90A4AE,color:#212121
-  classDef dec   fill:#FFF8E1,stroke:#F9A825,color:#212121
-  classDef io    fill:#E3F2FD,stroke:#1E88E5,color:#212121
-  classDef llm   fill:#EDE7F6,stroke:#7E57C2,color:#212121
-```
-
-Stages 3 and 3.5 fire **in parallel**, so the content bag adds zero
-critical-path latency. The bag (~5s) finishes well inside the
-selector's window (~11s), and the swap pass uses its output to fill
-empty or duplicated slots before composition.
+**예상 산출물** — 시스템 목적 정의서 · 주요 시나리오 목록 · 기능 범위
+정의서 · 초기 개발 일정표
 
 ---
 
-## The 5-stage pipeline
+### 단계 2. 요구사항 정의
 
-| # | Stage | Model | Input | Output | Why it exists |
-|---|-------|-------|-------|--------|---------------|
-| 1+2 | `runInterpretAndNormalize` | mini | scenario text | `interpretation` + `planningPacket` (uiState, tasks, slot_requirements) | Strip prose into structured intent so the selector has something machine-readable |
-| 3 | `runSelect` | full | planningPacket + RAG shortlist | `plan.requiredComponents[]` (componentType, role, slot, content) | Pick concrete components from a vocabulary of 92 (filtered to 52 renderable, top-30 by embedding) |
-| 3.5 | `runContentBag` | mini | scenario + uiState hints | unique-label fact bundle keyed by component type (weather, calendar, reminder × 3, message × 3, eta, …) | Material to fill empty / duplicated slots — runs in parallel with stage 3 |
-| 4 | `runComposeLayout` | full | plan | `layoutPlan.groups[].children[]` (vertical-stack / horizontal-stack / grid) | Spatial reasoning + reference-layout matching + token alignment |
-| 5 | `validatePlan` + `validateLayout` | — | plan + layoutPlan | `violations[]` rolled up by severity | 17+ rules: vocabulary, ordering, overflow, attention budget, role coherence |
-| 7 | `runExplain` | mini | everything | `{ why_this_ui, what_was_prioritized, what_was_removed, what_should_be_fixed }` | Human-readable rationale for the panel beside the canvas |
+**목적** — 사용자의 자연어 입력을 시스템이 처리 가능한 구조화된
+데이터로 변환합니다. Stage 1+2에서 `interpretation` 과 `planningPacket`
+을 동시에 생성하며, 후자는 `uiState`, `taskGroups`, `slotRequirements`,
+`selectionConstraints` 를 포함합니다.
 
-**Per-stage routing** keeps cost down — heavy reasoning stays on `gpt-5.4`,
-mechanical extraction lives on `gpt-5.4-mini`. Configurable in
-`.env` (`OPENAI_MODEL`, `OPENAI_MODEL_FAST`, `OPENAI_MODEL_COMPOSE`,
-`OPENAI_MODEL_EXPLAIN`, `OPENAI_MODEL_CONTENT_BAG`).
+**주요 작업**
 
-### Request flow (with parallelization)
+| 구분 | 내용 |
+|------|------|
+| 입력 데이터 정의 | `scenario_text`, `viewport`, `fastMode`, `features` 구조 |
+| UI 상태 정의 | `baseSurface`, `attentionMode`, `densityMode`, `interactionMode` |
+| 작업 그룹 정의 | 사용자가 달성하려는 작업을 `taskGroups` 로 구조화 |
+| 슬롯 요구사항 정의 | 화면에 필요한 정보, 액션, 상태 표시 영역 정의 |
+| 제약 조건 정의 | 선택 가능한 컴포넌트, 배치 규칙, 노출 우선순위 설정 |
 
-```mermaid
-%%{init: {'theme':'base', 'themeVariables': {
-  'fontFamily':'ui-sans-serif, system-ui, sans-serif',
-  'fontSize':'13px',
-  'primaryColor':'#EDE7F6',
-  'primaryBorderColor':'#7E57C2',
-  'primaryTextColor':'#212121',
-  'lineColor':'#7C6F9C',
-  'actorBkg':'#F3E5F5',
-  'actorBorder':'#8E24AA',
-  'actorTextColor':'#212121',
-  'noteBkgColor':'#FFF8E1',
-  'noteBorderColor':'#F9A825',
-  'noteTextColor':'#212121'
-}}}%%
-sequenceDiagram
-  autonumber
-  participant UI as Browser (genui.html)
-  participant Srv as server.js
-  participant Pipe as pipeline.js
-  participant LLM as OpenAI
+**사용 모델 및 파일**
 
-  UI->>Srv: POST /api/pipeline/full/stream<br/>{scenario, viewport, fastMode}
-  Srv->>Pipe: runInterpretAndNormalize
-  Pipe->>LLM: gpt-5.4-mini (merged 1+2)
-  LLM-->>Pipe: { intent, uiState, slotRequirements }
-  Pipe-->>Srv: step_done · interpret
-  Srv-->>UI: SSE event
+| 구분 | 내용 |
+|------|------|
+| 사용 모델 | `gpt-5.4-mini` |
+| 주요 함수 | `runInterpretAndNormalize()` |
+| 주요 파일 | `pipeline.js`, `schema_normalizer.js` |
+| 참조 파일 | `DESIGN.md`, `GENUI-PRINCIPLES.md`, `ORCHESTRATION.md`, `design_rules.json`, `global_rules.json`, `evolve.md` |
 
-  par stage 3
-    Srv->>Pipe: runSelect (with RAG top-30)
-    Pipe->>LLM: gpt-5.4 (vocabulary + content)
-    LLM-->>Pipe: requiredComponents[]
-  and stage 3.5 (parallel)
-    Srv->>Pipe: runContentBag
-    Pipe->>LLM: gpt-5.4-mini (varied facts)
-    LLM-->>Pipe: { weather, calendar[3], reminder[3], … }
-  end
+> Stage 1+2는 기존에 분리되어 있던 해석 단계와 정규화 단계를 하나의
+> LLM 호출로 통합하여 처리 시간을 줄이는 구조입니다. **평균 처리 시간
+> 약 3–5초.**
 
-  Note over Pipe: applyContentSwap<br/>fill empty / dup slots from bag
-  Pipe-->>Srv: step_done · select
-  Srv-->>UI: SSE event
+**클라이언트 확인 및 결정 사항**
 
-  Srv->>Pipe: runComposeLayout
-  Pipe->>LLM: gpt-5.4
-  LLM-->>Pipe: layoutPlan.groups
-  Pipe-->>Srv: step_done · compose
-  Srv-->>UI: SSE event
+| 결정 항목 | 클라이언트 확인 필요 |
+|----------|---------------------|
+| 입력 시나리오 형식 | 자유 입력 vs 템플릿 기반 |
+| `contextTags` 기준 | morning, driving 등 맥락 태그의 확장 여부 |
+| `attentionMode` 기준 | glanceable, focused 등 주의 모드의 정의 |
+| `densityMode` 기준 | compressed, normal 등 정보 밀도 기준 |
+| 요구사항 우선순위 | 어떤 정보가 반드시 화면에 들어가야 하는지 |
 
-  Srv->>Pipe: validate + rollup
-  Pipe-->>Srv: violations
-  Srv-->>UI: step_done · validate
-
-  alt fastMode = false
-    Srv->>Pipe: runExplain
-    Pipe->>LLM: gpt-5.4-mini
-    LLM-->>Pipe: { why_this_ui, … }
-    Srv-->>UI: step_done · explain
-  end
-
-  Srv-->>UI: done · final bundle
-  UI->>UI: renderPipelineResponse → DOM
-```
+**예상 산출물** — 입력 스키마 정의서 · UI 상태 정의서 ·
+`interpretation` + `planningPacket` · 정규화 규칙
 
 ---
 
-## RAG vocabulary funnel
+### 단계 3. 설계
 
-The component registry has 92 entries. Pasting all of them into every
-selector prompt would be wasteful and pollute the LLM's choice space
-with components that don't even have a renderer.
+**목적** — 요구사항을 바탕으로 어떤 UI 컴포넌트를 사용할지 선택하고,
+각 컴포넌트에 들어갈 콘텐츠와 화면 배치 구조를 설계합니다. 크게 세
+흐름으로 구성됩니다.
 
-```mermaid
-%%{init: {'theme':'base', 'themeVariables': {
-  'fontFamily':'ui-sans-serif, system-ui, sans-serif',
-  'fontSize':'13px',
-  'lineColor':'#7C6F9C'
-}}}%%
-flowchart LR
-  reg[(Registry · 92 components)]:::data
-  flt[Filter to renderable<br/>RENDERABLE_COMPONENT_IDS]:::proc
-  rendered[(52 renderable IDs)]:::data
-  embed[/Cosine top-K<br/>vs scenario embedding/]:::io
-  top[(Top 30)]:::data
-  mand[+ surface-mandatory<br/>status-bar · header]:::proc
-  shortlist[(31–32 final shortlist)]:::data
-  sel{{Stage 3 · Selector prompt}}:::llm
+#### 3-1. 컴포넌트 선택
 
-  reg --> flt --> rendered --> embed --> top --> mand --> shortlist --> sel
+Stage 3은 RAG shortlist를 먼저 생성합니다. 사용자 시나리오를
+`text-embedding-3-small` 로 임베딩한 뒤, **92개 컴포넌트 임베딩과
+비교하여 top-30 후보**를 추리고, **실제 renderer가 그릴 수 있는 52개
+컴포넌트** 로 필터링합니다. 이후 필수 컴포넌트를 추가해 LLM에 선택
+가능한 vocabulary로 제공합니다.
 
-  classDef proc  fill:#FAFAFA,stroke:#90A4AE,color:#212121
-  classDef io    fill:#E3F2FD,stroke:#1E88E5,color:#212121
-  classDef data  fill:#E8F5E9,stroke:#43A047,color:#212121
-  classDef llm   fill:#EDE7F6,stroke:#7E57C2,color:#212121
-```
+| 구분 | 내용 |
+|------|------|
+| 사용 모델 | `gpt-5.4` |
+| 주요 함수 | `runSelect()` |
+| 평균 시간 | 약 9–12초 |
+| 주요 산출물 | `requiredComponents[]` |
+| 핵심 특징 | RAG 기반 후보 추림 · 중복 제거 · 필수 컴포넌트 주입 |
 
-The 40 components dropped by the renderable filter (e.g.
-`card.subheading`, `card.menu-item-body`, `dialog.browser-top-bar`)
-exist in the registry but the renderer has no template for them — they
-would fall through to `(no template registered)` placeholder cards and
-trip multiple validators. Filtering at the embedding stage makes the
-selector physically incapable of picking a non-renderable id.
+#### 3-2. 콘텐츠 보강
 
-**Source of truth for the renderable set** — four maps that must stay
-in sync:
+Stage 3.5는 UI에 들어갈 풍부한 콘텐츠 조각을 별도로 생성합니다 —
+weather, calendar, reminder, message, eta, navigation, now_playing,
+shortcut, input_summary, primary_subject, primary_state,
+primary_action 등. **Stage 3과 병렬로 실행되므로 전체 처리 시간에 큰
+영향을 주지 않습니다.**
 
-| Map | File | Role |
-|---|---|---|
-| `templates` | `app/templates.js` | 28 editor-primitive templates (`card`, `dialog`, `bottomnav`, …) |
-| `PIPELINE_FALLBACK_TEMPLATES` | `app/templates.js` | 10 card-style fallback renders (`weather_glance_card`, `eta_card`, …) |
-| `PIPELINE_CHROME_ATOMIC_ROLE` | `app/scenes.js` | 6 chrome IDs → atomic roles (status-bar, header, gesture-bar) |
-| `PIPELINE_BODY_ATOMIC_ROLE` | `app/scenes.js` | 19 body IDs → atomic roles (focus-block, now-bar, action-row) |
+| 구분 | 내용 |
+|------|------|
+| 사용 모델 | `gpt-5.4-mini` |
+| 주요 함수 | `runContentBag()` |
+| 평균 시간 | 약 5–7초 |
+| 주요 산출물 | `contentBag` |
+| 핵심 특징 | generic content를 구체적인 콘텐츠로 대체 |
 
-Their union (52 IDs) is `RENDERABLE_COMPONENT_IDS` in `pipeline.js`.
+#### 3-3. 레이아웃 구성
 
----
+Stage 4는 선택된 컴포넌트를 화면 안에 어떻게 배치할지 결정합니다. LLM
+이 `layoutPlan` 을 생성하고, 이후 **deterministic post-fix chain** 이
+chrome migration · role reorder · auto-grid · composer backfill을
+수행합니다. 즉, LLM이 작성한 레이아웃을 그대로 쓰지 않고, 규칙 기반
+후처리로 정렬과 누락 보완을 수행합니다.
 
-## Diversity rules + 4-tier dedup ladder
+| 구분 | 내용 |
+|------|------|
+| 사용 모델 | `gpt-5.4` |
+| 주요 함수 | `runComposeLayout()` |
+| 평균 시간 | 약 5–8초 |
+| 주요 산출물 | `layoutPlan` |
+| 핵심 특징 | reference layout · closed variant set · post-fix chain 적용 |
 
-The selector LLM, left alone, will happily emit "STEP 2 OF 7 · Sauté
-tofu …" three times in a row. We catch that at four levels — each
-tier loosens the matching criterion until even cross-componentType
-duplicates get pruned.
+#### 사용 파일 및 재료
 
-```mermaid
-%%{init: {'theme':'base', 'themeVariables': {
-  'fontFamily':'ui-sans-serif, system-ui, sans-serif',
-  'fontSize':'13px',
-  'lineColor':'#7C6F9C'
-}}}%%
-flowchart TD
-  raw[/Raw LLM picks/]:::io
-  raw --> t1{PRIMARY<br/>componentType + normalized label}:::dec
-  t1 -- match --> drop1([drop]):::drop
-  t1 -- pass --> t2{SECONDARY<br/>+ value}:::dec
-  t2 -- match --> drop2([drop]):::drop
-  t2 -- pass --> t3{TERTIARY<br/>alphanumeric-only}:::dec
-  t3 -- match --> drop3([drop]):::drop
-  t3 -- pass --> t4{QUATERNARY<br/>cross-type label / value}:::dec
-  t4 -- match --> drop4([drop]):::drop
-  t4 -- pass --> cap{TYPE_CAP<br/>≤ 3 of any componentType}:::dec
-  cap -- over --> drop5([drop]):::drop
-  cap -- under --> survive([survive · enter swap]):::pass
+| 파일 | 역할 |
+|------|------|
+| `component_registry.json` | 92개 컴포넌트 정의 · variants · layout_spec · allowed_contexts |
+| `component_embeddings.json` | RAG 검색용 컴포넌트 임베딩 |
+| `generator_memory.json` | surface별 mandatory components 및 reference layout |
+| `generator.js` | rule-based ordering · positions · spacing · pre-filter |
+| `pipeline.js` | 선택 · 콘텐츠 보강 · 레이아웃 구성의 주요 로직 |
+| `schema_normalizer.js` | LLM 출력 정규화 |
+| `DESIGN.md` | Surface taxonomy · density rules · background policy |
+| `GENUI-PRINCIPLES.md` | 디자인 원칙 |
+| `ORCHESTRATION.md` | chrome · frame · stacking · nesting 규칙 |
+| `evolve.md` | 자기개선을 통해 누적된 제약 조건 |
 
-  classDef io    fill:#E3F2FD,stroke:#1E88E5,color:#212121
-  classDef dec   fill:#FFF8E1,stroke:#F9A825,color:#212121
-  classDef drop  fill:#FCE4EC,stroke:#D81B60,color:#212121
-  classDef pass  fill:#E8F5E9,stroke:#43A047,color:#212121
-```
+**클라이언트 확인 및 결정 사항**
 
-Most duplicates die at PRIMARY. The cross-type tier is the safety
-net for `btn-contained "Coupang cart"` + `action_chip_row "Coupang
-cart"` style collisions where the label is identical but the
-componentType differs.
+| 결정 항목 | 클라이언트 확인 필요 |
+|----------|---------------------|
+| 컴포넌트 범위 | 현재 92개 컴포넌트 유지 또는 확장 여부 |
+| 렌더 가능 컴포넌트 | 현재 renderer가 지원하는 52개 기준 유지 여부 |
+| 필수 UI 요소 | status-bar, header 등 mandatory chrome 기준 |
+| 레이아웃 규칙 | grid, stack, overlay 사용 기준 |
+| 콘텐츠 구체성 | 실제 데이터 연동인지, LLM 생성 콘텐츠인지 |
+| 테마 적용 범위 | 기본 테마, 사용자 테마, 브랜드 테마 구분 |
 
-The **selector prompt** also bakes in upstream diversity rules: max 2
-of the same componentType, every label must be unique, prefer variety,
-and `input_summary_card` is reserved for form summaries (not a generic
-content card).
+**예상 산출물** — component plan · `contentBag` · `layoutPlan` · variant
+reference · 디자인 규칙 문서
 
 ---
 
-## Per-slot content resolution
+### 단계 4. 개발
 
-A subtle renderer trap: the old `contentByType` Map keyed by
-componentType only — so when the plan has 3 distinct
-`input_summary_card` entries with different content (e.g. "Cooking
-session", "Recipe", "Step 3 of 7"), `Map.set` overwrote each previous
-entry, and all 3 layout children rendered with the **last** entry's
-content. The screen looked like 3 identical step cards.
+**목적** — 설계된 파이프라인을 실제 서버, 클라이언트, 렌더러, 검증
+시스템, 테마 시스템, Export 기능으로 구현합니다. 서버는
+`/api/pipeline/full/stream` 에서 **SSE 방식** 으로 각 stage의 진행
+상태를 클라이언트에 전달합니다. `step_started`, `step_done` 이벤트를
+push 하고, 최종적으로 `done` 이벤트를 통해 전체 bundle을 전달합니다.
 
-The fix is a 3-tier resolver:
+**주요 작업**
 
-```mermaid
-%%{init: {'theme':'base', 'themeVariables': {
-  'fontFamily':'ui-sans-serif, system-ui, sans-serif',
-  'fontSize':'13px',
-  'lineColor':'#7C6F9C'
-}}}%%
-flowchart LR
-  child[/Layout child<br/>{componentId, slot}/]:::io
-  child --> r1{contentBySlot[slot]?}:::dec
-  r1 -- hit --> done([use this content]):::pass
-  r1 -- miss --> r2{contentByTypeQueue[type].shift?}:::dec
-  r2 -- hit --> done
-  r2 -- miss --> r3[contentByType<br/>legacy last-wins]:::proc
-  r3 --> done
+| 구분 | 내용 |
+|------|------|
+| 서버 개발 | API endpoint, SSE stream, 모델 호출, stage orchestration |
+| 클라이언트 개발 | 입력 UI, feature toggle, progress 표시, 렌더링 처리 |
+| 렌더러 개발 | `layoutPlan` 과 `plan` 을 실제 HTML/CSS 화면으로 변환 |
+| 검증 시스템 개발 | plan, layout, overflow, context match 검사 |
+| 테마 시스템 개발 | `themes.json`, CSS variables, customize UI |
+| Export 기능 개발 | self-contained HTML export |
+| 자기개선 시스템 | test scenarios 기반 개선 룰 추출 및 `evolve.md` 반영 |
 
-  classDef io    fill:#E3F2FD,stroke:#1E88E5,color:#212121
-  classDef dec   fill:#FFF8E1,stroke:#F9A825,color:#212121
-  classDef proc  fill:#FAFAFA,stroke:#90A4AE,color:#212121
-  classDef pass  fill:#E8F5E9,stroke:#43A047,color:#212121
-```
+#### Validation 구조
 
-Distinct slots get their own content; identical-type-different-content
-plan entries are handed out in plan order via the queue. Last-wins
-remains as a final fallback so missing slots still render *something*
-rather than crash.
+Stage 5는 **LLM 호출 없이 deterministic validator** 가 실행됩니다.
 
----
+| Validator | 역할 |
+|-----------|------|
+| `validatePlan` | vocabulary scope · priority range · role consistency |
+| `validateLayout` | unknown component · invalid variant · order mismatch |
+| `validateLayoutOverflow` | viewport 초과 · glanceable child 수 초과 |
+| `validateContextComponentMatch` | component와 `contextTags` 의 적합성 |
 
-## Layout composer post-fixes
+검증 결과는 `high`, `medium`, `low` severity로 분류되며, `autoFix`
+가능 여부와 `reviewRequired` 여부가 함께 표시됩니다.
 
-The composer LLM produces a layout, then a deterministic chain of
-post-processors adjusts it before validation:
+#### 렌더링 구조
 
-| Post-fix | What it does |
-|---|---|
-| `chrome-role correction` | LLM sometimes tags content components as `role: "chrome"` — demoted to subject/state/context |
-| `same-label dedup` | 4-tier ladder above |
-| `type-cap` | Hard ceiling of 3 per componentType |
-| `mandatory injection` | Surface-required IDs (status-bar, header for `app`) added if the LLM didn't pick them |
-| `context-aware injection` | Morning scenarios → calendar, etc. |
-| `role-based child reorder` | Each group sorted subject → state → context → action → feedback |
-| `auto-grid (tile whitelist)` | If a group has 3+ same-type children AND the type is in `GRID_FRIENDLY_IDS` (weather / qs-toggle / widget-small / shortcut / buttons), promote container → 2-col grid. Text-heavy cards stay vertical-stack. |
-| `composer backfill` | If composer dropped plan components, append them to the appropriate group |
-| `chrome migration` | Move non-chrome components out of chrome groups |
+브라우저에서는 `layoutPlan` 과 `plan` 을 기반으로 화면을 구성합니다.
+크게 세 단계:
 
-**Chrome exemption** in the validators — `validateLayoutOverflow`
-skips width / visibleChildren checks for any child whose
-`role === 'chrome'` or whose parent group is `role === 'chrome'`.
-Chrome is full-width by design and doesn't compete for the user's
-attention budget; flagging it was a false positive that produced 1–2
-noise violations every run.
+1. canvas padding과 gap 적용
+2. group별 wrapper 생성
+3. 각 child를 chrome atomic, body atomic, fallback template 중 하나로
+   렌더링
 
----
+렌더러는 `contentBySlot` → `contentByTypeQueue` → legacy `contentByType`
+순서로 콘텐츠를 해결하여, 같은 `componentType` 이 여러 번 등장해도 서로
+다른 콘텐츠가 표시되도록 설계되어 있습니다.
 
-## Theme system
+#### 사용 모델 및 파일
 
-Presets live in **`figma-refs/themes.json`** and are served by **`GET /api/themes`** / **`POST /api/themes/active`**. Built-in ids today include **default**, **flat**, **gradient**, **glass**, **grain**, and **neon**, plus user **custom** themes saved from the editor.
+| 구분 | 내용 |
+|------|------|
+| FAST 모델 | `gpt-5.4-mini` |
+| SELECT 모델 | `gpt-5.4` |
+| COMPOSE 모델 | `gpt-5.4` |
+| CONTENT BAG 모델 | `gpt-5.4-mini` |
+| EXPLAIN 모델 | `gpt-5.4-mini` |
+| Embedding 모델 | `text-embedding-3-small` |
+| 주요 서버 파일 | `server.js`, `pipeline.js` |
+| 주요 클라이언트 파일 | `app/scenes.js`, `app/agent.js`, `app/surface-layout.js`, `app/atomics.js`, `app/templates.js` |
+| 주요 스타일 파일 | `css/genui.css` |
+| 테마 파일 | `figma-refs/themes.json` |
+| 테스트 파일 | `figma-refs/test_scenarios.json` |
 
-### Two apply paths (this changed vs older README drafts)
+**클라이언트 확인 및 결정 사항**
 
-The main app and the customizer intentionally apply tokens differently:
+| 결정 항목 | 클라이언트 확인 필요 |
+|----------|---------------------|
+| 개발 우선순위 | core pipeline 먼저인지, theme/customize/export까지 포함인지 |
+| 성능 기준 | full mode 20–30초 허용 여부, fastMode 15–25초 목표 여부 |
+| 검증 기준 | high violation은 차단할지, warning으로 표시할지 |
+| 설명 패널 | Why this UI 기능 포함 여부 |
+| 자기개선 기능 | 운영 단계에 포함할지, 내부 개발 도구로만 둘지 |
+| Export 방식 | HTML export 외 추가 포맷 필요 여부 |
 
-| Surface | Mechanism | Why |
-|---------|-----------|-----|
-| **`genui.html`** | `<style id="theme-vars">` injects **all** vars as `:root { … }` (`applyVarsToRoot`) | Top bar, sidebar, and phone canvas should share one coherent preset. |
-| **`customize.html`** | **`document.documentElement`** gets **`--oneui-theme-style`** and **`--oneui-chroma`** only; **everything else** (`--page-bg`, `--text-*`, `--surface-*`, card tokens, …) goes on **`#preview-theme-scope`** around the preview grid (`applyThemeVars` / `_writeVar`) | Left editor chrome stays readable; neon/dark presets must not collapse contrast on the inspector. |
-
-The renderer reads **`--oneui-theme-style`** from `:root` (`surface-layout.js` → `_themeSurfaceStyleRoot()`). **`_G()`** builds card shells: **`flat`** and **`neon`** use one matte **`var(--surface-bg)`** layer; **`glass`** keeps overlay + blur; **`base`** uses a single tokenized surface stack (see code for grain/other styles).
-
-```mermaid
-%%{init: {'theme':'base', 'themeVariables': {
-  'fontFamily':'ui-sans-serif, system-ui, sans-serif',
-  'fontSize':'13px',
-  'lineColor':'#7C6F9C'
-}}}%%
-flowchart TD
-  themes[(themes.json + custom)]:::data
-  api[/GET·POST /api/themes<br/>POST /api/themes/active/]:::io
-  customize[Customizer /customize]:::proc
-  scope["#preview-theme-scope<br/>most CSS vars"]:::proc
-  rootDoc["documentElement<br/>--oneui-theme-style · --oneui-chroma"]:::proc
-  genui[GenUI genui.html]:::proc
-  rootStyle["#theme-vars :root<br/>full preset"]:::proc
-  vars[(Shared token names<br/>--surface-bg · --text-primary · …)]:::data
-  consumer[Atomic cards<br/>surface-layout.js]:::proc
-  bc[/BroadcastChannel oneui-themes/]:::io
-  picker[Topbar Theme picker]:::proc
-  canvas([Phone canvas]):::start
-
-  themes --> api
-  api --> customize
-  customize --> scope
-  customize --> rootDoc
-  customize -- Save / activate --> api
-  customize -. theme-saved · theme-active-changed .-> bc
-  bc -. sync .-> picker
-  api --> genui
-  genui --> rootStyle
-  rootStyle --> vars
-  scope --> vars
-  rootDoc -. style flag .-> consumer
-  vars --> consumer --> canvas
-  picker --> genui
-
-  classDef start fill:#F3E5F5,stroke:#8E24AA,color:#212121
-  classDef proc  fill:#FAFAFA,stroke:#90A4AE,color:#212121
-  classDef io    fill:#E3F2FD,stroke:#1E88E5,color:#212121
-  classDef data  fill:#E8F5E9,stroke:#43A047,color:#212121
-```
-
-**Live preview** — In the customizer, edits call `_writeVar`; values go to the selected preview cell **or** to `#preview-theme-scope` (and document-only keys to `:root`). The preview grid re-renders so atoms pick up new vars. **Save** persists via **`POST /api/themes`** and broadcasts **`theme-active-changed`** so **`genui.html`** refreshes its theme list / active preset without a manual reload.
-
-Theme transitions across GenUI chrome (where implemented in CSS) animate over ~280ms **`cubic-bezier(0.2, 0, 0, 1)`** for color / background / border / shadow — non-layout properties only. **`prefers-reduced-motion`** skips animation where wired.
+**예상 산출물** — `/api/pipeline/full/stream` · stage별 response bundle
+(`interpretation`, `planningPacket`, `plan`, `layoutPlan`, `validation`,
+`explanation`, `contentBag`) · 렌더링 UI · validation report · theme
+editor · export HTML · improvement dashboard
 
 ---
 
-## Self-improving loop
+## 3. 협업 방식
 
-20 test scenarios (15 train + 5 holdout) live in
-`figma-refs/test_scenarios.json`. The improvement engine runs the
-suite, asks an LLM to extract patterns from the violations, trials a
-candidate rule against the scenarios, and persists the rule only if
-holdout violations actually drop.
+### 클라이언트와 개발팀의 역할 구분
 
-```mermaid
-%%{init: {'theme':'base', 'themeVariables': {
-  'fontFamily':'ui-sans-serif, system-ui, sans-serif',
-  'fontSize':'13px',
-  'lineColor':'#7C6F9C'
-}}}%%
-flowchart LR
-  suite[(Test suite<br/>20 scenarios)]:::data
-  run[Run pipeline<br/>per scenario]:::proc
-  agg[Aggregate violations<br/>by ruleId × scenario]:::proc
-  ext{{Pattern extraction<br/>LLM analyzes failure clusters}}:::llm
-  cand[/Candidate rule/]:::io
-  trial[Trial<br/>re-run suite WITH the rule]:::proc
-  delta{Holdout violations<br/>improved?}:::dec
-  persist[(Persist to evolve.md<br/>+ rehydrate at boot)]:::data
-  reject([Reject]):::drop
+| 단계 | 개발팀 역할 | 클라이언트 역할 |
+|------|------------|---------------|
+| 기획 | 시스템 범위, 구조, 개발 방식 제안 | 주요 사용 시나리오와 우선순위 결정 |
+| 요구사항 정의 | 입력 구조, UI 상태, 제약 조건 설계 | 필수 기능과 제외 범위 확인 |
+| 설계 | 컴포넌트 구조, 레이아웃 규칙, 검증 기준 설계 | 브랜드/디자인 기준 검토 |
+| 개발 | 서버, 클라이언트, 렌더러, validator 구현 | 중간 산출물 피드백 |
+| 테스트 | 대표 시나리오 기반 성능 및 품질 검증 | 실제 사용 관점의 수용 여부 판단 |
+| 고도화 | 속도 최적화, 룰 개선, 컴포넌트 확장 | 추가 요구사항 및 운영 기준 결정 |
 
-  suite --> run --> agg --> ext --> cand --> trial --> delta
-  delta -- "yes" --> persist
-  delta -- "no"  --> reject
-  persist -. "feeds future runs" .-> suite
+### 주요 의사결정 포인트
 
-  classDef proc  fill:#FAFAFA,stroke:#90A4AE,color:#212121
-  classDef dec   fill:#FFF8E1,stroke:#F9A825,color:#212121
-  classDef io    fill:#E3F2FD,stroke:#1E88E5,color:#212121
-  classDef data  fill:#E8F5E9,stroke:#43A047,color:#212121
-  classDef llm   fill:#EDE7F6,stroke:#7E57C2,color:#212121
-  classDef drop  fill:#FCE4EC,stroke:#D81B60,color:#212121
-```
-
-Boot output shows `Improve test-suite 20 scenarios · N learned rules
-rehydrated`. Cycle history snapshots are persisted under
-`data/improvement_history/`. Dashboard at `/improve`.
+| # | 포인트 | 설명 |
+|---|--------|------|
+| 1 | **생성 범위** | 어떤 UI까지 자동 생성하고, 어떤 영역은 고정할지 |
+| 2 | **컴포넌트 범위** | 92개 컴포넌트 전체를 유지할지, 우선순위 컴포넌트부터 적용할지 |
+| 3 | **속도와 품질의 균형** | full mode와 fastMode 중 어떤 사용성을 우선할지 |
+| 4 | **데이터 연동 수준** | 실제 서비스 데이터 연동인지, 데모용 synthetic content인지 |
+| 5 | **브랜드 적용 수준** | 기본 One UI 스타일인지, 고객사 브랜드 테마까지 적용할지 |
+| 6 | **검증 정책** | violation 발생 시 자동 수정 · 경고 표시 · 생성 차단 중 어떤 정책 |
+| 7 | **Export 정책** | 결과물을 HTML로만 내보낼지, 디자인/개발 핸드오프 포맷까지 확장할지 |
 
 ---
 
-## API surface
+## 4. 일정 흐름 예시
 
-| Endpoint | Method | Purpose |
-|---|---|---|
-| `/api/pipeline/full` | POST | Single-shot, returns full bundle |
-| `/api/pipeline/full/stream` | POST | SSE — emits `step_started` / `step_done` per stage (used by the UI for progressive render) |
-| `/api/pipeline/plan` | POST | Stages 1–3 only |
-| `/api/pipeline/compose` | POST | Stages 1–4 |
-| `/api/themes` | GET / POST | List themes / save a custom theme |
-| `/api/themes/active` | POST | Set the active theme id |
-| `/api/improve/test-suite` | GET | List the 20 scenarios |
-| `/api/improve/extract` | POST | Run pattern extraction on current violations |
-| `/api/improve/trial` | POST | Trial a candidate rule on the suite |
-| `/api/improve/cycle` | POST | Full cycle (extract → trial → persist) |
-| `/api/agent/health` | GET | Server health + model name |
+| 구간 | 주요 내용 | 산출물 |
+|------|---------|--------|
+| 1주차 | 기획 정리 및 대표 시나리오 정의 | 시나리오 목록, 기능 범위 |
+| 2주차 | 요구사항 스키마 및 UI 상태 정의 | input schema, `uiState` 구조 |
+| 3–4주차 | 컴포넌트 선택 및 콘텐츠 보강 파이프라인 구현 | `plan`, `contentBag` |
+| 5–6주차 | 레이아웃 composer 및 renderer 구현 | `layoutPlan`, 렌더링 화면 |
+| 7주차 | validation 및 post-fix chain 정교화 | validation report |
+| 8주차 | 테마, Export, 설명 패널 정리 | export HTML, Why this UI |
+| 9주차 이후 | 테스트 시나리오 기반 개선 및 최적화 | 개선 룰, 성능 리포트 |
 
----
-
-## File map
-
-| Layer | File | Role |
-|---|---|---|
-| **Server** | `server.js` | HTTP, routing, OpenAI calls, per-stage model routing, embeddings, theme + improve endpoints |
-| | `pipeline.js` | The 5 stages, RAG shortlist, content bag, dedup ladder, type cap, post-fixes, validators |
-| | `layout_composer.js` | `validateLayoutOverflow` + `validateContextComponentMatch` (chrome-exempt width / visibleChildren checks) |
-| | `schema_normalizer.js` | Defensive schema reconciliation (LLM emits camel↔snake variants) |
-| | `improvement_engine.js` | Test runner + pattern extractor + trial harness + persist |
-| | `generator.js` | Local-mode keyword matcher (legacy fallback) |
-| **Client (UI shell)** | `genui.html` | Sidebar tabs (Generate / Design / Refine / Wallpaper / Motion), topbar (Theme / Light / Device / Clear), canvas frame |
-| | `customize.html` | Theme editor — scoped preview (`#preview-theme-scope`), Save / Discard, BroadcastChannel |
-| | `improve.html` | Self-improvement cycle dashboard |
-| | `index.html` | Project landing — links to genui / customize / improve / preview |
-| **Client (renderer)** | `app/scenes.js` | `renderPipelineResponse` orchestrator, per-slot content resolver, focus-block / now-bar / action-row adapters, kind parsers |
-| | `app/surface-layout.js` | Atomic shapes + `_G()` surfaces · now-bar · focus-block · notifications · QS · embeds `GalaxyAtomics` |
-| | `app/atomics.js` | Samsung-shaped primitives (Clock, WeatherDate, toggles, …) consumed by surface-layout |
-| | `app/templates.js` | Editor-primitive templates + `PIPELINE_FALLBACK_TEMPLATES` |
-| | `app/agent.js` | Path-A pipeline client (SSE consumer) + auto-iterate loop |
-| | `app/canvas.js` | `clearCanvas` + DesignDoc reset |
-| | `app/settings.js` | Light/Dark canvas toggle, applyColor walker |
-| **Knowledge base** | `figma-refs/component_registry.json` | 92 component specs (variants, layout_spec, allowed_contexts) |
-| | `figma-refs/component_embeddings.json` | 1536-dim embeddings for RAG (text-embedding-3-small) |
-| | `figma-refs/themes.json` | Theme presets + `_active` id |
-| | `figma-refs/test_scenarios.json` | 20 scenarios for the improvement engine |
-| | `figma-refs/generator_memory.json` | Mandatory components per surface, layout reference orders |
-| | `figma-refs/design_rules.json` | Token families |
-| | `DESIGN.md` / `GENUI-PRINCIPLES.md` / `ORCHESTRATION.md` | Knowledge base for `buildPromptContext` to slice into prompts |
-| | `evolve.md` | Persisted learned constraints from the self-improvement engine |
-| **Build** | `scripts/build_component_embeddings.js` | Regenerates the RAG corpus from `component_registry.json` |
-| **State** | `data/improvement_history/*.json` | Snapshots of past improvement cycles |
+현재 구조상 **전체 처리 시간은 full mode 기준 약 20–30초, fastMode
+기준 약 15–25초** 입니다. 가장 큰 병목은 Stage 3의 컴포넌트 선택
+단계이며, vocabulary 축소 · few-shot 축소 · Stage 3+4 병합 등을 통해
+latency를 줄일 수 있습니다.
 
 ---
 
-## Local dev
+## 5. 리스크 및 대응 방안
+
+| 리스크 | 설명 | 대응 방안 |
+|--------|------|----------|
+| LLM 출력 불안정성 | LLM이 schema와 다른 형태로 응답할 수 있음 | `schema_normalizer` 와 payload fixer로 표준화 |
+| 컴포넌트 선택 오류 | 시나리오와 맞지 않는 컴포넌트가 선택될 수 있음 | RAG shortlist · `allowed_contexts` · context validation |
+| 중복 콘텐츠 발생 | 같은 label이나 value가 반복될 수 있음 | **4-tier dedup ladder** + `contentBag` swap |
+| 레이아웃 누락 | 선택된 컴포넌트가 `layoutPlan` 에서 빠질 수 있음 | `composerBackfill` 로 자동 보완 |
+| 화면 overflow | viewport를 넘어가는 레이아웃 가능성 | `validateLayoutOverflow` 로 감지 |
+| 속도 지연 | Stage 3 select가 critical path 병목 | vocabulary 축소 · cache 활용 · fastMode |
+| 브랜드 일관성 부족 | 생성 UI가 브랜드 톤과 어긋날 수 있음 | theme variables · `design_rules` · component registry |
+| 설명 가능성 부족 | 고객사가 왜 이런 UI가 나왔는지 이해하기 어려움 | `runExplain` 을 통해 Why this UI 패널 제공 |
+| 운영 중 품질 저하 | 다양한 시나리오에서 예외 발생 가능 | `test_scenarios` + `improvement_engine` 으로 반복 개선 |
+
+---
+
+## 6. 최종 요약
+
+본 시스템은 자연어 시나리오를 입력받아 모바일 UI를 자동 생성하는
+GenUI 파이프라인입니다.
+
+**핵심 파이프라인:**
+
+1. `gpt-5.4-mini` 가 사용자 의도와 요구사항을 빠르게 해석
+2. `gpt-5.4` 가 적절한 UI 컴포넌트를 선택
+3. `gpt-5.4-mini` 가 콘텐츠를 보강 (Stage 2와 병렬)
+4. `gpt-5.4` 가 레이아웃을 구성
+5. 규칙 기반 validator가 오류 · 누락 · overflow · context mismatch 검사
+6. 브라우저 렌더러가 최종 화면을 구성
+7. 필요 시 explain 모델이 "왜 이런 UI가 생성되었는지" 를 설명
+
+**파이프라인의 장점** — LLM의 생성 능력과 규칙 기반 시스템의 통제력을
+**결합**. AI가 자유롭게 결과를 만들되, 컴포넌트 registry · 디자인 원칙
+· 레이아웃 규칙 · validator · theme system이 결과물을 안정적으로 관리.
+
+### 고객사가 이해해야 할 핵심 의사결정
+
+| 의사결정 | 질문 |
+|---------|------|
+| **범위** | 어떤 시나리오와 화면 유형까지 자동 생성할 것인가 |
+| **품질** | 속도 · 설명 가능성 · 디자인 일관성 중 무엇을 우선할 것인가 |
+| **운영** | 데모형 시스템인지, 실제 서비스 연동형 시스템인지 |
+
+현재 구조는 이미 기획·요구사항 해석·컴포넌트 선택·콘텐츠 보강·레이아웃
+생성·검증·렌더링·테마·Export·자기개선까지 포함하는 **end-to-end
+파이프라인** 으로 설계되어 있습니다. 고객사와의 다음 논의에서는 기술
+구현 자체보다 **"어떤 사용 시나리오를 우선 제품화할 것인가"** 와
+**"어떤 품질 기준을 통과해야 납품 가능한가"** 를 먼저 확정하는 것이
+중요합니다.
+
+---
+
+## Running locally
 
 ```bash
-# 1. Set your key + per-stage model routing
-echo 'OPENAI_API_KEY=sk-...'              >  .env
-echo 'PIPELINE_RAG=on'                    >> .env
-echo 'OPENAI_MODEL=gpt-5.4'               >> .env
-echo 'OPENAI_MODEL_FAST=gpt-5.4'          >> .env
-echo 'OPENAI_MODEL_COMPOSE=gpt-5.4'       >> .env
-echo 'OPENAI_MODEL_EXPLAIN=gpt-5.4-mini'  >> .env
-echo 'OPENAI_MODEL_CONTENT_BAG=gpt-5.4-mini' >> .env
+# 1. clone
+git clone https://github.com/qshim/samsung-oneui-design-system.git
+cd samsung-oneui-design-system
 
-# 2. Run
-yarn dev
-# → http://127.0.0.1:3000  (다른 앱이 3000을 쓰면 .env에 PORT=3001 등으로 변경)
+# 2. configure (OpenAI API key)
+cp .env.example .env   # or create .env with: OPENAI_API_KEY=sk-...
+
+# 3. run
+node server.js         # http://localhost:3001
+
+# 4. open
+#   /            → genui shell  (시나리오 입력 + 캔버스)
+#   /customize   → theme editor (CSS 변수 라이브 프리뷰)
+#   /improve     → improvement dashboard
 ```
 
-Boot banner reflects model routing, RAG status, suite size, and how
-many learned rules were rehydrated:
-
-```
-✓ Running on  http://127.0.0.1:3000  (loopback-only)
-✓ Model       gpt-5.4   (select)
-✓ Model EXPL  gpt-5.4-mini  (explain)
-✓ Model BAG   gpt-5.4-mini  (stage 3.5 content bag, parallel)
-✓ Stage 3 RAG ON  (top-30 from 92, +~400ms/call)
-✓ Improve     test-suite 20 scenarios · 0 learned rules rehydrated → POST /api/improve/cycle
-✓ Limits      body<=1024KB  llm<=4 concurrent / 60 per min
-```
+요구 사항:
+- Node.js 18+
+- OpenAI API key (`OPENAI_API_KEY` env)
+- 브라우저: Chrome / Edge / Safari 최신 (CSS `:has()` 사용)
 
 ---
 
-## Topbar UX
+## Repository layout
 
 ```
-┌────────────────────────────────────────────────────────────────────┐
-│ ⌂  SAMSUNG GenUI    [Theme ▾ ✎] [Light]   [📱 Galaxy S26 ▾]  [Clear] │
-└────────────────────────────────────────────────────────────────────┘
+samsung-oneui-design-system/
+├── server.js              # SSE pipeline · /api/themes · /api/pipeline/*
+├── pipeline.js            # 5-stage LLM pipeline + post-fix chain
+├── schema_normalizer.js   # LLM 출력 정규화
+├── generator.js           # rule-based pre-filter + ordering
+├── improvement_engine.js  # 자기개선 룰 추출
+├── genui.html             # main UI shell
+├── customize.html         # theme editor (cards + screen modes)
+├── improve.html           # improvement dashboard
+├── app/                   # client-side modules
+│   ├── scenes.js          # orchestration
+│   ├── surface-layout.js  # group → wrapper
+│   ├── templates.js       # full-card templates
+│   ├── atomics.js         # role-based atomic renderers
+│   ├── agent.js           # SSE consumer
+│   └── ui-panels.js       # sidebar tabs · customize side panel · MLP
+├── css/genui.css          # design tokens · layout · theme bridge
+├── figma-refs/
+│   ├── component_registry.json   # 92 components
+│   ├── component_embeddings.json # RAG embeddings
+│   ├── generator_memory.json     # surface mandatories + reference layouts
+│   ├── themes.json               # built-in + custom themes
+│   └── test_scenarios.json       # self-improvement test suite
+├── DESIGN.md              # surface taxonomy · density · background policy
+├── GENUI-PRINCIPLES.md    # 디자인 원칙
+├── ORCHESTRATION.md       # chrome · frame · stacking · nesting
+└── evolve.md              # 누적된 자기개선 제약 조건
 ```
-
-Grouped left → right by purpose: **Look** (theme + canvas mode) →
-**Device** → **Action**. Theme picker lives in the topbar (not the
-Generate panel) because it's a global preference, not a per-generate
-option. The ✎ icon opens `/customize` in a new window with
-BroadcastChannel sync.
-
----
-
-## One UI design tokens (reference)
-
-This is still a One UI 8.5 design system at heart — the generative
-pipeline produces UIs that respect these tokens.
-
-### Color
-| Token | Light | Dark | Use |
-|---|---|---|---|
-| Primary | `#0381FE` | `#0381FE` | FAB, sliders, accent |
-| Primary Dark | `#0072DE` | `#3E91FF` | Contained buttons |
-| Activated | `#3E91FF` | `#3E91FF` | Checkboxes, toggles |
-| Surface | `#FCFCFC` | `#171717` | Page background |
-| Text Primary | `#252525` | `#FAFAFA` | Body text |
-| Divider | `#E4E4E4` | `#47E4E4E4` | Borders |
-
-### Radius
-| Token | Value | Use |
-|---|---|---|
-| Checkbox | 4dp | Small controls |
-| List item | 8dp | Item backgrounds |
-| Bottom nav | 12dp | Nav buttons |
-| Switch | 16dp | Toggle track |
-| Button | 18dp | All buttons |
-| Chip | 22dp | Tags, filters |
-| Card / Dialog / Sheet | 26dp | Containers |
-| FAB | 50% | Floating action |
-| Search / Pill | 999dp | Search bars |
-
-### Motion
-| Token | Curve / Duration | Use |
-|---|---|---|
-| `ease-emphasized` | `(0.2, 0, 0, 1)` | Hero transitions, sheets |
-| `ease-spring` | `(0.2, 0.6, 0.4, 1)` | Dialogs, FAB, scale |
-| `ease-bounce` | `(0.34, 1.56, 0.64, 1)` | Celebration, success |
-| `dur-normal` | 300ms | Standard transitions |
-| `dur-slow` | 400ms | Bottom sheets, dialogs |
-| `dur-page` | 800ms | Page transitions |
-
----
-
-## Diagram style notes
-
-Diagrams above use a shape + color language ported from FigJam's
-*Diagram Basics* template:
-
-- **Pill (lavender)** for terminal nodes (Start / End / Phone canvas)
-- **Rectangle (cream)** for deterministic processes
-- **Diamond (pale yellow)** for decisions — Yes / No / Success branches
-- **Parallelogram (pale blue)** for I/O — data crossing a boundary
-- **Cylinder (pale green)** for data stores (registry, embeddings, themes)
-- **Hexagon (pale violet)** for LLM calls — emphasizes "AI thinks here"
-- **Pill (warm pink)** for drops / rejects — duplicate or invalid
-
-GitHub renders Mermaid natively, so the diagrams are first-class
-content on the repo landing page.
 
 ---
 
@@ -641,4 +459,3 @@ content on the repo landing page.
 - [One UI Design System](https://design.samsung.com/global/contents/one-ui/)
 - [One UI Developer Docs](https://developer.samsung.com/one-ui)
 - [oneui-design (GitHub)](https://github.com/OneUIProject/oneui-design)
-- [FigJam · Diagram Basics (template)](https://www.figma.com/board/4OPGrPb6iawIeZtqbFizBQ/Diagram-Basics--Community-) — diagram shape/color language
