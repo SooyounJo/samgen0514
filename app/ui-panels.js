@@ -97,11 +97,25 @@ function switchTab(idx, btn) {
 }
 
 // Initial tab: default to Generate (panel-5). Deep-link via hash overrides.
+// Additional deep-link affordances for docs/screenshots:
+//   #design                  → Design tab
+//   #mlp / #mlp-prototype    → MLP Prototype tab
+//   #refine                  → (legacy) MLP slot, kept for backcompat
+//   ?customize=open          → opens the Customize side panel after boot
 window.addEventListener('DOMContentLoaded', () => {
   const hash = (location.hash || '').toLowerCase();
   if (hash === '#design' || hash === '#build') switchTab(6, null);
+  else if (hash === '#mlp' || hash === '#mlp-prototype') switchTab(7, null);
   else if (hash === '#refine') switchTab(7, null);
   else switchTab(5, null); // Force Generate as the landing tab
+
+  // Query-string trigger so a headless-Chrome screenshot run can pop
+  // the Customize side panel without needing to script a click.
+  if (/[?&]customize=open\b/.test(location.search)) {
+    // Defer one tick so other DOMContentLoaded handlers (theme picker,
+    // tab restore) finish first and the toggle finds the iframe slot.
+    setTimeout(() => { try { toggleCustomizePanel(true); } catch (_) {} }, 0);
+  }
 });
 
 function toggleDesignSection(id) {

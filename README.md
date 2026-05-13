@@ -8,6 +8,13 @@
 결과를 디자인 시스템·컴포넌트 레지스트리·레이아웃 규칙·검증 로직으로
 제어합니다.
 
+![GenUI shell — Generate tab + empty Galaxy S26 canvas](docs/screenshots/01-genui-shell.png)
+
+*GenUI shell: 좌측 사이드바 (Generate / Design / MLP Prototype) ·
+시나리오 입력 · 테마 픽커 + 연필(Customize 패널 트리거) ·
+Auto-iterate / Log 토글 · Pipeline features · Refine · 우측 Galaxy S26
+캔버스.*
+
 ---
 
 ## Framework overview
@@ -165,6 +172,14 @@ primary_action 등. **Stage 3과 병렬로 실행되므로 전체 처리 시간�
 | 주요 산출물 | `contentBag` |
 | 핵심 특징 | generic content를 구체적인 콘텐츠로 대체 |
 
+![Live preview — all themed cards rendered from contentBag](docs/screenshots/03-customize-cards.png)
+
+*위 그림은 `contentBag` 이 채워준 콘텐츠로 렌더된 모든 카드 (Voice ·
+Navigation now-bar · Charging now-bar · AI Notification · Quick Toggles ·
+Action Chips · Reminder · Message · ETA · Input Summary · Calendar ·
+Weather 등) 가 같은 테마 토큰을 받았을 때 어떻게 보이는지를 보여주는
+customize.html의 Cards mode.*
+
 #### 3-3. 레이아웃 구성
 
 Stage 4는 선택된 컴포넌트를 화면 안에 어떻게 배치할지 결정합니다. LLM
@@ -195,6 +210,15 @@ chrome migration · role reorder · auto-grid · composer backfill을
 | `GENUI-PRINCIPLES.md` | 디자인 원칙 |
 | `ORCHESTRATION.md` | chrome · frame · stacking · nesting 규칙 |
 | `evolve.md` | 자기개선을 통해 누적된 제약 조건 |
+
+![Design tab — Hierarchy rules + classification/density/urgency tables](docs/screenshots/05-design-tab.png)
+
+*Design 탭: 위 단계에서 적용되는 디자인 규칙을 시각화한 패널.
+Classification → Path A Layout Recipe (4 patterns) · Attention Mode →
+Density (3 modes) · Urgency → Accent Color (3 rules) · Component Role →
+Visual Treatment 등을 확인할 수 있고, Pipeline Atomic Bridge
+(21 mappings, 기본 접힘) 는 클릭으로 펼쳐서 컴포넌트 ID와 atomic
+렌더러의 매핑을 봅니다.*
 
 **클라이언트 확인 및 결정 사항**
 
@@ -291,6 +315,43 @@ Stage 5는 **LLM 호출 없이 deterministic validator** 가 실행됩니다.
 (`interpretation`, `planningPacket`, `plan`, `layoutPlan`, `validation`,
 `explanation`, `contentBag`) · 렌더링 UI · validation report · theme
 editor · export HTML · improvement dashboard
+
+#### Theme editor — 디자이너용 토큰 라이브 프리뷰
+
+연필 ✎ 아이콘 클릭 시 우측에서 슬라이드 인되는 **Customize 사이드
+패널**. 사이드바를 제외한 캔버스 전체 폭을 차지하므로 토큰 편집
+패널과 라이브 프리뷰가 동시에 보입니다. ESC · × · 연필 재클릭으로
+닫힘.
+
+![Customize side panel — token editor + live preview cards](docs/screenshots/02-customize-panel.png)
+
+*Customize 패널 (Cards mode): 좌측 Typography 토큰 편집 (Display /
+Body / Mono family · 6 사이즈 · 4 weight) → 우측 모든 themed
+카드들이 실시간 반영. Download template · Import theme 으로
+JSON+CSS+HTML 묶음을 주고받음.*
+
+**Cards mode vs Screen mode**
+
+![Customize Screen mode — 6 phones with mixed 1-col and 2-col groups](docs/screenshots/06-customize-screen.png)
+
+*Screen mode: 6개의 S26-비율 phone (Glance · Cooking · Calendar ·
+Messages · Navigation · Search). 각 phone은 의도적으로 1-col 과 2-col
+그룹을 섞어 같은 컴포넌트가 full-width hero · half-width tile 두
+맥락에서 어떻게 보이는지 한 눈에 비교 가능. `--screen-padding-*`,
+`--gap-screen`, `--gap-cards`, `--screen-grid-columns` 토큰의 효과를
+실시간으로 검증.*
+
+#### MLP Prototype — 시각적 데모
+
+`MLP Prototype` 탭은 추론·검증 시스템과 분리된 **시각 쇼케이스**
+영역. 손으로 큐레이션한 데모 화면 · Figma 프레임 · 비디오 링크를
+타일로 모아두는 곳. 탭 활성 시 사이드바가 600px로 넓어지고 3-col
+그리드로 5개 타일이 스크롤 없이 전체 노출.
+
+![MLP Prototype tab — 3-column gallery of curated prototypes](docs/screenshots/04-mlp-prototype.png)
+
+*MLP Prototype: Cooking Assistant · Daily Snapshot · Navigation
+Glance · Quick Reply · Morning Glance.*
 
 ---
 

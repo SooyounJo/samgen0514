@@ -1968,6 +1968,18 @@ function setPreviewMode(mode) {
   document.querySelectorAll('.preview-mode-btn').forEach(btn => {
     btn.addEventListener('click', () => setPreviewMode(btn.dataset.mode));
   });
+  // URL deep-link: ?mode=screen activates the Screen preview on boot
+  // so headless-Chrome screenshot runs can capture both modes without
+  // needing to script a click.
+  try {
+    const q = new URLSearchParams(location.search);
+    if (q.get('mode') === 'screen') {
+      // Defer one tick so renderAtomicForRole (loaded by trailing
+      // <script>) has a chance to register before renderScreenPreview
+      // runs.
+      setTimeout(() => setPreviewMode('screen'), 0);
+    }
+  } catch (_) {}
 })();
 
 function renderPreviewGrid() {
