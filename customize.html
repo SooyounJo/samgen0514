@@ -714,8 +714,8 @@
        can Save them as a new theme. Hidden file input + visible button
        so the styling matches the rest of the toolbar. -->
   <button type="button" id="btn-download-template" class="secondary" title="Download a ZIP with theme.css + theme.json + theme-preview.html + README.md. Designers can edit theme.css in any editor and re-import here without site access.">Download template</button>
-  <input type="file" id="import-html-file" accept=".html,.htm,text/html,.css,.json,application/json" multiple style="display:none;">
-  <button type="button" id="btn-import-html" class="secondary" title="Import one or more theme files (.css / .json / .html). Multiple files are merged in selection order — later files win on conflicts.">Import theme</button>
+  <input type="file" id="import-html-file" accept=".zip,application/zip,.html,.htm,text/html,.css,.json,application/json" multiple style="display:none;">
+  <button type="button" id="btn-import-html" class="secondary" title="Import theme · accepts the .zip you got from Download template, OR individual theme.css / theme.json files. Multiple files merge in selection order (later wins). Drag-and-drop also works.">Import theme</button>
   <!-- Unsaved-changes indicator. Appears the moment any editor input
        changes a CSS variable, hides again on Save / Discard / dropdown
        change. The pill makes it explicit that edits are live-previewed
@@ -2844,15 +2844,115 @@ async function downloadThemeTemplate() {
 //  preview updates live, and marks the editor unsaved so a Save
 //  persists it as a brand-new theme.
 // ---------------------------------------------------------------------------
+// Whitelist of theme variable prefixes — used to filter out base
+// design-system tokens (--primary, --bg, etc.) that live in the
+// inlined genui.css inside the new gallery HTML. Without this filter
+// an unsuspecting designer who imports theme-preview.html would
+// accidentally overwrite their theme tokens with the base palette.
+// The whitelist matches the prefixes used by THEME_EDIT_SCHEMA in
+// this same file.
+const _THEME_VAR_PREFIXES = [
+  '--font-', '--letter-spacing', '--line-height',
+  '--space-', '--screen-', '--gap-', '--container-',
+  '--card-', '--qs-', '--nowbar-', '--fab-',
+  '--surface-', '--text-primary', '--text-secondary', '--text-tertiary',
+  '--accent-', '--primary-', '--oneui-theme-style', '--preview-bg'
+];
+function _isThemeVar(key) {
+  if (!key || typeof key !== 'string') return false;
+  return _THEME_VAR_PREFIXES.some(p => key.startsWith(p));
+}
+
+// ZIP path — accept the whole download bundle as-is. Designer drops
+// `oneui-<theme>-template.zip` directly without unpacking. We read
+// the embedded theme.json (preferred) or theme.css; theme-preview.html
+// + README.md are intentionally skipped.
+async function _parseZipFile(file) {
+  if (typeof window.JSZip !== 'function') {
+    return { vars: {}, source: 'skipped · JSZip not loaded', name: file.name, error: 'JSZip missing' };
+  }
+  let zip;
+  try {
+    const ab = await file.arrayBuffer();
+    zip = await window.JSZip.loadAsync(ab);
+  } catch (e) {
+    return { vars: {}, source: 'skipped · not a valid zip', name: file.name, error: e.message };
+  }
+  // Find candidate files inside (case-insensitive, allow nested folders).
+  const entries = Object.keys(zip.files);
+  const findEntry = (pattern) => entries.find(p => pattern.test(p));
+  const jsonEntry = findEntry(/(^|\/)theme\.json$/i);
+  const cssEntry  = findEntry(/(^|\/)theme\.css$/i);
+
+  // Prefer theme.json — exact values, no parsing risk.
+  if (jsonEntry) {
+    const txt = await zip.files[jsonEntry].async('string');
+    try {
+      const meta = JSON.parse(txt);
+      if (meta && meta.themeVars && typeof meta.themeVars === 'object') {
+        return {
+          vars: meta.themeVars,
+          source: 'zip · ' + jsonEntry + ' (' + Object.keys(meta.themeVars).length + ' vars)',
+          name: file.name,
+          themeName: meta.name || null
+        };
+      }
+    } catch (e) { /* fall through to CSS */ }
+  }
+  // Fall back to theme.css inside the zip.
+  if (cssEntry) {
+    const txt = await zip.files[cssEntry].async('string');
+    const vars = _scrapeCssRootVars(txt);
+    if (Object.keys(vars).length > 0) {
+      return {
+        vars,
+        source: 'zip · ' + cssEntry + ' (' + Object.keys(vars).length + ' vars)',
+        name: file.name
+      };
+    }
+  }
+  return {
+    vars: {},
+    source: 'zip · no theme.json or theme.css found',
+    name: file.name,
+    error: 'expected theme.json or theme.css inside the zip'
+  };
+}
+
+// Scrape `:root { --xxx: value; }` blocks from a CSS-ish text and
+// return them as an object. Shared by CSS files and the legacy
+// inline-CSS HTML export fallback.
+function _scrapeCssRootVars(text) {
+  const out = {};
+  if (!text) return out;
+  const rootBlockRe = /:root[^{]*\{([^}]*)\}/g;
+  let block;
+  while ((block = rootBlockRe.exec(text)) !== null) {
+    const varRe = /(--[a-z0-9-]+)\s*:\s*([^;]+);/gi;
+    let m;
+    while ((m = varRe.exec(block[1])) !== null) {
+      out[m[1].trim()] = m[2].trim();
+    }
+  }
+  return out;
+}
+
 // Parse a single file → its themeVars + a tag describing the source.
 // Pure function — does NOT touch :root or the editor. Caller (the
 // multi-file import handler) merges the maps and applies them.
 async function _parseThemeFile(file) {
   if (!file) return { vars: {}, source: '(empty)', name: '(empty)' };
-  const MAX_BYTES = 4 * 1024 * 1024;
+  const MAX_BYTES = 8 * 1024 * 1024;   // bumped to 8 MB to fit the comprehensive gallery zip + preview html
   if (file.size > MAX_BYTES) {
     return { vars: {}, source: 'skipped · too large', name: file.name, error: 'too large (' + Math.round(file.size / 1024) + ' KB)' };
   }
+
+  // ZIP-aware path — bypass text parsing entirely for .zip files.
+  const fname = (file.name || '').toLowerCase();
+  if (fname.endsWith('.zip')) {
+    return await _parseZipFile(file);
+  }
+
   let text = '';
   try { text = await file.text(); }
   catch (e) { return { vars: {}, source: 'skipped · read failure', name: file.name, error: e.message }; }
@@ -2861,7 +2961,6 @@ async function _parseThemeFile(file) {
   // metadata comment), .css (just the theme vars), or .json (machine
   // export from /customize → Download template). Detection is by
   // extension first, then by content sniffing as a safety net.
-  const fname = (file.name || '').toLowerCase();
   const looksJSON = fname.endsWith('.json') ||
                     /^\s*\{[\s\S]*"themeVars"\s*:/m.test(text);
   const looksCSS  = fname.endsWith('.css')  ||
@@ -2883,7 +2982,8 @@ async function _parseThemeFile(file) {
     }
   }
 
-  // (1b) HTML metadata comment path — fast, structured.
+  // (1b) HTML metadata comment path — fast, structured. Old genui
+  // Export HTML used this; new gallery preview omits it.
   if (!themeVars) {
     const metaMatch = text.match(/<!--\s*ONEUI_EXPORT_META:([\s\S]*?):END\s*-->/);
     if (metaMatch) {
@@ -2899,7 +2999,24 @@ async function _parseThemeFile(file) {
     }
   }
 
-  // (1c) CSS comment metadata — designer-authored .css files MAY include
+  // (1c) GALLERY PREVIEW DETECTION — the new theme-preview.html links to
+  // an external theme.css and inlines the base genui.css. Importing it
+  // alone would scrape the base :root tokens (wrong: not the user's
+  // theme). Tell the user what to do instead.
+  if (!themeVars && fname.endsWith('.html')) {
+    const isGalleryPreview = /<link[^>]+href="theme\.css"/i.test(text) ||
+                             /body class="tp-page"/.test(text);
+    if (isGalleryPreview) {
+      return {
+        vars: {},
+        source: 'gallery preview · cannot import alone',
+        name: file.name,
+        error: 'theme-preview.html links to theme.css externally. Drop the .zip or theme.css/theme.json instead.'
+      };
+    }
+  }
+
+  // (1d) CSS comment metadata — designer-authored .css files MAY include
   //   /*! oneui-theme: { "name": "...", "baseThemeId": "...", ... } */
   //  We don't need it for the vars themselves but capture the name.
   let cssMetaName = null;
@@ -2912,17 +3029,22 @@ async function _parseThemeFile(file) {
   }
 
   // (2) Fallback: scrape every `:root { --xxx: VALUE; }` block. Works
-  // for raw CSS files AND for HTML exports lacking the metadata comment.
+  // for raw CSS files AND for legacy HTML exports lacking the metadata
+  // comment. For HTML inputs we additionally filter by theme-var
+  // prefix so an accidental import of a file that bundles base CSS
+  // (e.g. a self-contained genui export) doesn't bring in --primary /
+  // --bg / etc. — only tokens the editor actually owns.
   if (!themeVars) {
-    themeVars = {};
-    const rootBlockRe = /:root[^{]*\{([^}]*)\}/g;
-    let block;
-    while ((block = rootBlockRe.exec(text)) !== null) {
-      const varRe = /(--[a-z0-9-]+)\s*:\s*([^;]+);/gi;
-      let m;
-      while ((m = varRe.exec(block[1])) !== null) {
-        themeVars[m[1].trim()] = m[2].trim();
-      }
+    const scraped = _scrapeCssRootVars(text);
+    if (looksCSS) {
+      // CSS files are trusted — designer wrote them, no filter.
+      themeVars = scraped;
+    } else {
+      // HTML scan — filter to theme-token prefixes only.
+      themeVars = {};
+      Object.keys(scraped).forEach(k => {
+        if (_isThemeVar(k)) themeVars[k] = scraped[k];
+      });
     }
     const sourceTag = looksCSS ? 'css' : 'html-scan';
     importedFrom = sourceTag + (cssMetaName ? (' · ' + cssMetaName) : '') +
@@ -3005,6 +3127,85 @@ async function importHTMLFile(file) { return importThemeFiles(file ? [file] : []
     const files = e.target.files;
     if (files && files.length) await importThemeFiles(files);
     input.value = '';   // reset so re-picking the same files still fires
+  });
+})();
+
+// Drag-and-drop: any file dropped anywhere in the customize window
+// triggers the import path. While a drag is in progress we show a
+// fullscreen overlay so the user knows it's a valid drop target.
+//
+// Implementation details:
+//   - dragenter/dragleave use a counter pattern because dragleave
+//     fires every time the cursor crosses a child element, not just
+//     when leaving the window
+//   - we only react when the drag carries actual files (not text,
+//     selected divs, etc.) — that's the `types.includes('Files')` check
+//   - the overlay is created on first dragenter so the markup cost is
+//     deferred until the user actually drags something in
+(function _wireImportDragDrop() {
+  let dragDepth = 0;
+  let overlay = null;
+  function ensureOverlay() {
+    if (overlay) return overlay;
+    overlay = document.createElement('div');
+    overlay.id = 'import-dropzone-overlay';
+    overlay.innerHTML =
+      '<div class="dropzone-card">' +
+      '  <div class="dropzone-icon" aria-hidden="true">&#8615;</div>' +
+      '  <div class="dropzone-title">Drop to import theme</div>' +
+      '  <div class="dropzone-hint">accepts .zip / .css / .json / .html · drop multiple files to merge</div>' +
+      '</div>';
+    Object.assign(overlay.style, {
+      position: 'fixed', inset: '0', zIndex: '9999',
+      background: 'rgba(3, 129, 254, 0.10)',
+      backdropFilter: 'blur(6px)', webkitBackdropFilter: 'blur(6px)',
+      display: 'none', alignItems: 'center', justifyContent: 'center',
+      pointerEvents: 'none', /* let the drop event reach the body */
+      transition: 'opacity 0.12s ease'
+    });
+    // Inner card styling — uses fixed values rather than CSS vars so
+    // the overlay reads the same regardless of the active theme.
+    const style = document.createElement('style');
+    style.textContent =
+      '#import-dropzone-overlay .dropzone-card{padding:36px 44px;border-radius:24px;background:rgba(10,10,12,0.85);border:2px dashed rgba(3,129,254,0.65);color:#fff;text-align:center;max-width:520px;}' +
+      '#import-dropzone-overlay .dropzone-icon{font-size:48px;line-height:1;margin-bottom:16px;color:#0381FE;}' +
+      '#import-dropzone-overlay .dropzone-title{font-size:20px;font-weight:700;letter-spacing:-0.3px;margin-bottom:6px;}' +
+      '#import-dropzone-overlay .dropzone-hint{font-size:13px;color:rgba(255,255,255,0.65);}';
+    document.head.appendChild(style);
+    document.body.appendChild(overlay);
+    return overlay;
+  }
+  function carriesFiles(e) {
+    if (!e.dataTransfer || !e.dataTransfer.types) return false;
+    // Modern browsers expose `types` as a DOMStringList; convert.
+    return Array.from(e.dataTransfer.types).indexOf('Files') !== -1;
+  }
+  window.addEventListener('dragenter', (e) => {
+    if (!carriesFiles(e)) return;
+    e.preventDefault();
+    dragDepth += 1;
+    const ov = ensureOverlay();
+    ov.style.display = 'flex';
+  });
+  window.addEventListener('dragover', (e) => {
+    if (!carriesFiles(e)) return;
+    e.preventDefault();   // required for `drop` to fire
+    e.dataTransfer.dropEffect = 'copy';
+  });
+  window.addEventListener('dragleave', (e) => {
+    if (!carriesFiles(e)) return;
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (dragDepth === 0 && overlay) overlay.style.display = 'none';
+  });
+  window.addEventListener('drop', async (e) => {
+    if (!carriesFiles(e)) return;
+    e.preventDefault();
+    dragDepth = 0;
+    if (overlay) overlay.style.display = 'none';
+    const files = e.dataTransfer.files;
+    if (files && files.length) {
+      await importThemeFiles(files);
+    }
   });
 })();
 
