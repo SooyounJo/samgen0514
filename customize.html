@@ -2515,20 +2515,41 @@ async function _fetchText(url) {
   } catch (_) { return ''; }
 }
 
+// Parse via DOMParser, NOT regex. Regex over the raw source picks up
+// literal <style> / </style> / <body> strings that appear inside
+// JavaScript (e.g. this very file has `'<style>'` and `'</style>'`
+// inside the template-string section that generates the gallery), and
+// the parser then sees an early </style> in the gallery's own <style>
+// block and renders half the file as body content. DOM-based parsing
+// correctly distinguishes element boundaries from script text.
 function _extractStyleBlocks(html) {
-  // Concat every <style>...</style> block (some pages have multiple).
   if (!html) return '';
-  const blocks = [];
-  const re = /<style[^>]*>([\s\S]*?)<\/style>/gi;
-  let m;
-  while ((m = re.exec(html))) blocks.push(m[1]);
-  return blocks.join('\n\n');
+  try {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    return Array.from(doc.querySelectorAll('style'))
+      .map(function (el) { return el.textContent || ''; })
+      .join('\n\n');
+  } catch (_) { return ''; }
 }
 
 function _extractBody(html) {
   if (!html) return '';
-  const m = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
-  return m ? m[1] : '';
+  try {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    return doc.body ? doc.body.innerHTML : '';
+  } catch (_) { return ''; }
+}
+
+// Final-line-of-defense: strip any literal </style> tokens from CSS
+// text before we drop it into a <style> block. Even if the extractor
+// is perfectly DOM-aware, CSS comments / string content technically
+// can't contain </style> in HTML's serialization — and the parser
+// will close the style block at the first </style> it sees regardless
+// of CSS context. Replace with the escaped form so it survives the
+// roundtrip without breaking either the CSS parser or the HTML parser.
+function _safeCssForInlineStyle(css) {
+  if (!css) return '';
+  return String(css).replace(/<\/style/gi, '<\\/style');
 }
 
 async function _buildPreviewGalleryHTML(theme) {
@@ -2588,36 +2609,43 @@ async function _buildPreviewGalleryHTML(theme) {
     '<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">',
     '<style>',
     '/* === [1] Inlined: css/genui.css (atomic components + theme bridge) === */',
-    genuiCss,
+    _safeCssForInlineStyle(genuiCss),
     '/* === [2] Inlined: customize.html <style> (preview-grid + screen-grid) === */',
-    customizeStyle,
+    _safeCssForInlineStyle(customizeStyle),
     '/* === [3] Inlined: components.html <style> (22 OneUI components) === */',
-    componentsStyle,
+    _safeCssForInlineStyle(componentsStyle),
     '/* === [4] Gallery layout overrides ===================================== */',
-    'html, body { margin: 0; padding: 0; background: var(--page-bg, #0a0a0c); color: var(--text-primary, #efeef2); font-family: var(--font-family-body, "Inter", sans-serif); line-height: var(--line-height-normal, 1.45); }',
-    '.tp-shell { max-width: 1480px; margin: 0 auto; padding: 28px 24px 80px; }',
-    '.tp-meta { margin-bottom: 28px; }',
-    '.tp-meta h1 { font-family: var(--font-family-display, "Inter", sans-serif); font-size: 34px; font-weight: 700; letter-spacing: -0.6px; margin: 0 0 6px; }',
-    '.tp-meta p  { color: var(--text-secondary, rgba(239,238,242,0.7)); font-size: 14px; margin: 0; }',
-    '.tp-toc { display: flex; gap: 10px; flex-wrap: wrap; margin: 18px 0 26px; }',
-    '.tp-toc a { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 999px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08); color: var(--text-primary, #efeef2); text-decoration: none; font-size: 12.5px; font-weight: 500; transition: background 0.15s ease, border-color 0.15s ease; }',
-    '.tp-toc a:hover { background: rgba(255,255,255,0.09); border-color: rgba(255,255,255,0.16); }',
-    '.tp-toc a .count { color: var(--text-tertiary, rgba(239,238,242,0.45)); font-weight: 400; }',
-    '.tp-section { margin-top: 48px; padding-top: 28px; border-top: 1px solid rgba(255,255,255,0.06); }',
-    '.tp-section > h2 { font-family: var(--font-family-display, "Inter", sans-serif); font-size: 22px; font-weight: 700; margin: 0 0 6px; letter-spacing: -0.3px; }',
-    '.tp-section > .tp-hint { color: var(--text-tertiary, rgba(239,238,242,0.55)); font-size: 13px; margin: 0 0 22px; max-width: 760px; }',
-    '.tp-cards-scope { background: var(--preview-bg, #2f6264); border-radius: 28px; padding: 18px; }',
-    '.tp-cards-scope .preview-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }',
-    '.tp-screens-wrap .preview-screen-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }',
-    '@media (max-width: 980px) { .tp-cards-scope .preview-grid, .tp-screens-wrap .preview-screen-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }',
-    '@media (max-width: 620px) { .tp-cards-scope .preview-grid, .tp-screens-wrap .preview-screen-grid { grid-template-columns: 1fr; } }',
-    '/* The components page assumes white-ish background — give it space to breathe */',
-    '.tp-components-host { background: #f5f6f7; color: #111; border-radius: 24px; padding: 32px 18px; }',
-    '.tp-components-host .section { padding: 32px 18px; }',
-    '.tp-components-host .footer, .tp-components-host .nav { display: none !important; }',
+    /* High-specificity selectors (`html body.tp-page ...`) so this block
+       wins regardless of where it falls in the cascade vs. the three
+       inlined source stylesheets above. Without the extra body class
+       we observed the gallery layout being clobbered by .section /
+       container rules from components.html. */
+    'html, body.tp-page { margin: 0; padding: 0; background: var(--page-bg, #0a0a0c); color: var(--text-primary, #efeef2); font-family: var(--font-family-body, "Inter", sans-serif); line-height: var(--line-height-normal, 1.45); min-height: 100vh; overflow-x: hidden; overflow-y: auto; }',
+    'body.tp-page * { box-sizing: border-box; }',
+    'body.tp-page .tp-shell { max-width: 1480px; margin: 0 auto; padding: 56px 48px 96px; display: block; }',
+    'body.tp-page .tp-meta { margin: 0 0 28px; display: block; }',
+    'body.tp-page .tp-meta h1 { font-family: var(--font-family-display, "Inter", sans-serif); font-size: 34px; font-weight: 700; letter-spacing: -0.6px; margin: 0 0 8px; display: block; color: var(--text-primary, #efeef2); }',
+    'body.tp-page .tp-meta p  { color: var(--text-secondary, rgba(239,238,242,0.7)); font-size: 14px; margin: 0; display: block; max-width: 760px; line-height: 1.55; }',
+    'body.tp-page .tp-toc { display: flex; gap: 10px; flex-wrap: wrap; margin: 22px 0 36px; padding: 0; list-style: none; }',
+    'body.tp-page .tp-toc a { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 999px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.10); color: var(--text-primary, #efeef2); text-decoration: none; font-size: 12.5px; font-weight: 500; transition: background 0.15s ease, border-color 0.15s ease; }',
+    'body.tp-page .tp-toc a:hover { background: rgba(255,255,255,0.10); border-color: rgba(255,255,255,0.18); }',
+    'body.tp-page .tp-toc a .count { color: var(--text-tertiary, rgba(239,238,242,0.50)); font-weight: 400; margin-left: 4px; }',
+    'body.tp-page .tp-section { margin: 56px 0 0; padding: 36px 0 0; border-top: 1px solid rgba(255,255,255,0.08); display: block; }',
+    'body.tp-page .tp-section > h2 { font-family: var(--font-family-display, "Inter", sans-serif); font-size: 22px; font-weight: 700; margin: 0 0 8px; letter-spacing: -0.3px; display: block; color: var(--text-primary, #efeef2); }',
+    'body.tp-page .tp-section > .tp-hint { color: var(--text-tertiary, rgba(239,238,242,0.55)); font-size: 13px; margin: 0 0 28px; max-width: 760px; display: block; line-height: 1.55; }',
+    'body.tp-page .tp-cards-scope { background: var(--preview-bg, #2f6264); border-radius: 28px; padding: 24px; }',
+    'body.tp-page .tp-cards-scope .preview-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; padding: 0; }',
+    'body.tp-page .tp-screens-wrap { padding: 0; }',
+    'body.tp-page .tp-screens-wrap .preview-screen-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }',
+    '@media (max-width: 980px) { body.tp-page .tp-cards-scope .preview-grid, body.tp-page .tp-screens-wrap .preview-screen-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } body.tp-page .tp-shell { padding: 40px 24px 80px; } }',
+    '@media (max-width: 620px) { body.tp-page .tp-cards-scope .preview-grid, body.tp-page .tp-screens-wrap .preview-screen-grid { grid-template-columns: 1fr; } body.tp-page .tp-shell { padding: 28px 16px 80px; } }',
+    '/* Components page has its own design system on a light surface — keep it isolated visually */',
+    'body.tp-page .tp-components-host { background: #f5f6f7; color: #111; border-radius: 24px; padding: 16px 24px 40px; margin: 0; }',
+    'body.tp-page .tp-components-host .section { padding: 36px 0; margin: 0; background: transparent; }',
+    'body.tp-page .tp-components-host .footer, body.tp-page .tp-components-host .nav, body.tp-page .tp-components-host .hero { display: none !important; }',
     '</style>',
     '<link rel="stylesheet" href="theme.css">',  // designer's edits — LAST so they win
-    '</head><body>',
+    '</head><body class="tp-page">',
     '<div class="tp-shell">',
     '  <header class="tp-meta">',
     '    <h1>' + safeName + ' · preview gallery</h1>',
