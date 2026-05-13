@@ -2493,17 +2493,189 @@ function discardChanges() {
 }
 
 // ---------------------------------------------------------------------------
-//  Download template — 3-file starter pack (css + json + preview html)
+//  _buildPreviewGalleryHTML — produce the comprehensive theme-preview.html
+//
+//  Why this exists: the previous template included 5 hand-coded mock
+//  cards which barely hinted at the system's surface area. Designers
+//  couldn't validate their token edits against the full component
+//  catalogue without loading the live site. This helper snapshots the
+//  three relevant surfaces (Cards · Screens · 22 base components) plus
+//  the CSS they need, and assembles a single self-contained file.
+//
+//  Side effects: while running, may briefly toggle PREVIEW_MODE to
+//  'screen' to capture that surface, then restores the user's prior
+//  selection. The user sees no visible flicker because the toggle
+//  happens within one await tick.
+// ---------------------------------------------------------------------------
+async function _fetchText(url) {
+  try {
+    const r = await fetch(url, { cache: 'no-store' });
+    if (!r.ok) return '';
+    return await r.text();
+  } catch (_) { return ''; }
+}
+
+function _extractStyleBlocks(html) {
+  // Concat every <style>...</style> block (some pages have multiple).
+  if (!html) return '';
+  const blocks = [];
+  const re = /<style[^>]*>([\s\S]*?)<\/style>/gi;
+  let m;
+  while ((m = re.exec(html))) blocks.push(m[1]);
+  return blocks.join('\n\n');
+}
+
+function _extractBody(html) {
+  if (!html) return '';
+  const m = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+  return m ? m[1] : '';
+}
+
+async function _buildPreviewGalleryHTML(theme) {
+  // === (1) Snapshot Cards mode ==============================================
+  // Force a fresh render so the snapshot reflects whatever tokens the
+  // designer has just edited (even unsaved ones — they're in computed
+  // styles already).
+  try { if (typeof renderPreviewGrid === 'function') renderPreviewGrid(); } catch (_) {}
+  const cardsInner = ($('preview-grid') && $('preview-grid').innerHTML) || '';
+  const cardsCount = (($('preview-grid') && $('preview-grid').querySelectorAll('.preview-cell')) || []).length;
+
+  // === (2) Snapshot Screen mode (temporarily switch, then restore) ==========
+  const wasMode = PREVIEW_MODE;
+  try { setPreviewMode('screen'); } catch (_) {}
+  // Two animation frames + a short timeout give the renderer time to
+  // populate the screen grid even on slower machines.
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 60))));
+  const screensInner = ($('preview-screen-grid') && $('preview-screen-grid').innerHTML) || '';
+  const screensCount = (($('preview-screen-grid') && $('preview-screen-grid').querySelectorAll('.preview-phone-frame')) || []).length;
+  if (wasMode !== 'screen') {
+    try { setPreviewMode(wasMode || 'cards'); } catch (_) {}
+  }
+
+  // === (3) Fetch the 22-component One UI page + its inline styles ==========
+  const componentsRaw = await _fetchText('components.html');
+  const componentsStyle = _extractStyleBlocks(componentsRaw);
+  let componentsBody    = _extractBody(componentsRaw);
+  // Components page has a <header>/<nav> we don't need in the gallery;
+  // strip it so the section flows cleanly under our own H1.
+  componentsBody = componentsBody
+    .replace(/<header[\s\S]*?<\/header>/i, '')
+    .replace(/<nav[\s\S]*?<\/nav>/i, '');
+  const componentsCount = (componentsRaw.match(/class="comp-title"/g) || []).length;
+
+  // === (4) Fetch base styles needed by the rendered atomic HTML ============
+  const customizeRaw = await _fetchText('customize.html');
+  const customizeStyle = _extractStyleBlocks(customizeRaw);
+  const genuiCss = await _fetchText('css/genui.css');
+
+  // === (5) Theme metadata ===================================================
+  const themeName = theme.name || 'Theme preview';
+  const safeName  = _esc(themeName);
+
+  // === (6) Assemble the file ===============================================
+  // CSS load order:
+  //   1) genui.css  (atomic component rules, theme variable bridge)
+  //   2) customize.html inline styles (preview-grid / screen-grid layout)
+  //   3) components.html inline styles (22-component styles)
+  //   4) gallery-specific overrides (TOC, sections)
+  //   5) theme.css via <link>  → designer's edits win the cascade
+  return [
+    '<!DOCTYPE html>',
+    '<html lang="en"><head>',
+    '<meta charset="UTF-8">',
+    '<meta name="viewport" content="width=device-width, initial-scale=1.0">',
+    '<title>' + safeName + ' — preview gallery</title>',
+    '<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">',
+    '<style>',
+    '/* === [1] Inlined: css/genui.css (atomic components + theme bridge) === */',
+    genuiCss,
+    '/* === [2] Inlined: customize.html <style> (preview-grid + screen-grid) === */',
+    customizeStyle,
+    '/* === [3] Inlined: components.html <style> (22 OneUI components) === */',
+    componentsStyle,
+    '/* === [4] Gallery layout overrides ===================================== */',
+    'html, body { margin: 0; padding: 0; background: var(--page-bg, #0a0a0c); color: var(--text-primary, #efeef2); font-family: var(--font-family-body, "Inter", sans-serif); line-height: var(--line-height-normal, 1.45); }',
+    '.tp-shell { max-width: 1480px; margin: 0 auto; padding: 28px 24px 80px; }',
+    '.tp-meta { margin-bottom: 28px; }',
+    '.tp-meta h1 { font-family: var(--font-family-display, "Inter", sans-serif); font-size: 34px; font-weight: 700; letter-spacing: -0.6px; margin: 0 0 6px; }',
+    '.tp-meta p  { color: var(--text-secondary, rgba(239,238,242,0.7)); font-size: 14px; margin: 0; }',
+    '.tp-toc { display: flex; gap: 10px; flex-wrap: wrap; margin: 18px 0 26px; }',
+    '.tp-toc a { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 999px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08); color: var(--text-primary, #efeef2); text-decoration: none; font-size: 12.5px; font-weight: 500; transition: background 0.15s ease, border-color 0.15s ease; }',
+    '.tp-toc a:hover { background: rgba(255,255,255,0.09); border-color: rgba(255,255,255,0.16); }',
+    '.tp-toc a .count { color: var(--text-tertiary, rgba(239,238,242,0.45)); font-weight: 400; }',
+    '.tp-section { margin-top: 48px; padding-top: 28px; border-top: 1px solid rgba(255,255,255,0.06); }',
+    '.tp-section > h2 { font-family: var(--font-family-display, "Inter", sans-serif); font-size: 22px; font-weight: 700; margin: 0 0 6px; letter-spacing: -0.3px; }',
+    '.tp-section > .tp-hint { color: var(--text-tertiary, rgba(239,238,242,0.55)); font-size: 13px; margin: 0 0 22px; max-width: 760px; }',
+    '.tp-cards-scope { background: var(--preview-bg, #2f6264); border-radius: 28px; padding: 18px; }',
+    '.tp-cards-scope .preview-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }',
+    '.tp-screens-wrap .preview-screen-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }',
+    '@media (max-width: 980px) { .tp-cards-scope .preview-grid, .tp-screens-wrap .preview-screen-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }',
+    '@media (max-width: 620px) { .tp-cards-scope .preview-grid, .tp-screens-wrap .preview-screen-grid { grid-template-columns: 1fr; } }',
+    '/* The components page assumes white-ish background — give it space to breathe */',
+    '.tp-components-host { background: #f5f6f7; color: #111; border-radius: 24px; padding: 32px 18px; }',
+    '.tp-components-host .section { padding: 32px 18px; }',
+    '.tp-components-host .footer, .tp-components-host .nav { display: none !important; }',
+    '</style>',
+    '<link rel="stylesheet" href="theme.css">',  // designer's edits — LAST so they win
+    '</head><body>',
+    '<div class="tp-shell">',
+    '  <header class="tp-meta">',
+    '    <h1>' + safeName + ' · preview gallery</h1>',
+    '    <p>Self-contained theme preview · edit <code>theme.css</code> &amp; refresh to verify · re-import via <code>/customize → Import theme</code></p>',
+    '  </header>',
+    '  <nav class="tp-toc">',
+    '    <a href="#tp-cards">Cards <span class="count">' + cardsCount + '</span></a>',
+    '    <a href="#tp-screens">Screen compositions <span class="count">' + screensCount + '</span></a>',
+    '    <a href="#tp-oneui">One UI base components <span class="count">' + componentsCount + '</span></a>',
+    '  </nav>',
+    '  <section id="tp-cards" class="tp-section">',
+    '    <h2>All themed cards</h2>',
+    '    <p class="tp-hint">Every card from Customize → Cards mode. Re-render with your theme tokens to see how each surface reacts.</p>',
+    '    <div class="tp-cards-scope preview-theme-scope">',
+    '      <div class="preview-grid">' + cardsInner + '</div>',
+    '    </div>',
+    '  </section>',
+    '  <section id="tp-screens" class="tp-section">',
+    '    <h2>Screen compositions</h2>',
+    '    <p class="tp-hint">Six S26-ratio phones — each mixes 1-col and 2-col groups so the same card type renders in both contexts. Validate <code>--screen-padding-*</code>, <code>--gap-screen</code>, <code>--gap-cards</code>, <code>--screen-grid-columns</code>.</p>',
+    '    <div class="tp-screens-wrap preview-screen-wrap">',
+    '      <div class="preview-screen-grid">' + screensInner + '</div>',
+    '    </div>',
+    '  </section>',
+    '  <section id="tp-oneui" class="tp-section">',
+    '    <h2>One UI 8.5 · base components</h2>',
+    '    <p class="tp-hint">The full primitive set from the standalone <code>components.html</code> reference — buttons, FAB, switches, checkboxes, inputs, chips, cards, dialogs, sliders, etc. Theme tokens that match (radii, accent colors, typography) will flow through.</p>',
+    '    <div class="tp-components-host">',
+    componentsBody,
+    '    </div>',
+    '  </section>',
+    '</div>',
+    '</body></html>'
+  ].join('\n');
+}
+
+// ---------------------------------------------------------------------------
+//  Download template — comprehensive starter pack
 //
 //  Designers click this once, get a working baseline of the currently
-//  active theme as three separate files. They edit `theme.css` in any
-//  editor (VS Code, Cursor, etc.), optionally drop `theme-preview.html`
-//  into a browser to preview, then re-upload `theme.css` (or `.json` /
-//  `.html`) via Import HTML to round-trip back into the customizer.
+//  active theme as a small bundle of files.
 //
-//  We download three files in sequence (no JSZip dependency). Modern
-//  browsers prompt "allow this site to download multiple files" the
-//  first time and remember the choice.
+//  Files inside the .zip:
+//    theme.css          editable variable file (the actual edit surface)
+//    theme.json         machine-readable mirror, same vars + metadata
+//    theme-preview.html ★ self-contained gallery — opens any browser to show:
+//                         (1) all themed cards from customize Cards mode
+//                         (2) all 6 screen compositions from Screen mode
+//                         (3) the 22 base One UI 8.5 components
+//                         All three sections render with the user's
+//                         theme.css applied, so the designer can verify
+//                         every component / every screen at one glance
+//                         without needing access to the live site.
+//    README.md          30-second orientation for the recipient
+//
+//  Designer edits `theme.css` in VS Code / Cursor, refreshes
+//  `theme-preview.html` to see the result, then sends `theme.css` back
+//  via /customize → Import theme to round-trip into the site.
 // ---------------------------------------------------------------------------
 async function downloadThemeTemplate() {
   const themeId = $('theme-select').value;
@@ -2556,62 +2728,39 @@ async function downloadThemeTemplate() {
   };
   const json = JSON.stringify(meta, null, 2);
 
-  // (3) theme-preview.html — drop the file pair into any folder and
-  //     open this HTML in a browser to see the cards rendered with
-  //     the current CSS values. Self-contained except for theme.css.
-  const html = '<!DOCTYPE html>\n' +
-    '<html lang="en"><head>\n' +
-    '<meta charset="UTF-8">\n' +
-    '<meta name="viewport" content="width=device-width, initial-scale=1.0">\n' +
-    '<title>' + _esc(theme.name || 'Theme preview') + ' — preview</title>\n' +
-    '<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">\n' +
-    '<link rel="stylesheet" href="theme.css">\n' +
-    '<style>\n' +
-    '  body { margin:0; padding:24px; background: var(--page-bg, #0a0a0c); color: var(--text-primary, #efeef2); font-family: var(--font-family-body, "Inter", sans-serif); line-height: var(--line-height-normal, 1.45); }\n' +
-    '  .container { max-width: 480px; margin: 0 auto; padding: var(--screen-padding-v, 16px) var(--screen-padding-h, 14px); display:flex; flex-direction:column; gap: var(--gap-screen, 16px); }\n' +
-    '  h1 { font-family: var(--font-family-display, "Inter", sans-serif); font-size: var(--font-size-display, 32px); font-weight: var(--font-weight-bold, 700); letter-spacing: var(--letter-spacing-tight, -0.5px); margin: 0 0 8px; }\n' +
-    '  p { color: var(--text-secondary, rgba(239,238,242,0.7)); font-size: var(--font-size-md, 15px); margin: 0 0 16px; }\n' +
-    '  .group { display:flex; flex-direction:column; gap: var(--gap-cards, 12px); }\n' +
-    '  .card { background: rgba(255,255,255,0.06); border-radius: var(--card-radius, 24px); padding: var(--card-padding-v, 14px) var(--card-padding-h, 16px); display:flex; align-items:center; gap: var(--card-gap, 6px); }\n' +
-    '  .card .accent { width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0; }\n' +
-    '  .card .body { display:flex; flex-direction:column; gap: 2px; }\n' +
-    '  .card .label { font-size: var(--font-size-xs, 11px); font-weight: var(--font-weight-semibold, 600); letter-spacing: var(--letter-spacing-wide, 0.5px); text-transform: uppercase; color: var(--text-tertiary, rgba(239,238,242,0.45)); }\n' +
-    '  .card .value { font-size: var(--font-size-lg, 18px); font-weight: var(--font-weight-semibold, 600); color: var(--text-primary, #efeef2); }\n' +
-    '  .accent-weather { background: var(--card-weather-accent, #FBBF24); }\n' +
-    '  .accent-calendar { background: var(--card-calendar-accent, #A78BFA); }\n' +
-    '  .accent-reminder { background: var(--card-reminder-accent, #F59E0B); }\n' +
-    '  .accent-eta { background: var(--card-eta-accent, #14B8A6); }\n' +
-    '  .accent-primary { background: var(--accent-primary, #0381FE); }\n' +
-    '</style>\n' +
-    '</head><body>\n' +
-    '<div class="container">\n' +
-    '  <div>\n' +
-    '    <h1>' + _esc(theme.name || 'Theme preview') + '</h1>\n' +
-    '    <p>Edit <code>theme.css</code> in any editor, refresh this page to preview, then re-import via <code>/customize</code>.</p>\n' +
-    '  </div>\n' +
-    '  <div class="group">\n' +
-    '    <div class="card"><div class="accent accent-weather"></div><div class="body"><div class="label">Weather</div><div class="value">23° · Partly cloudy</div></div></div>\n' +
-    '    <div class="card"><div class="accent accent-calendar"></div><div class="body"><div class="label">Next up · Today</div><div class="value">9:30 AM · Stand-up</div></div></div>\n' +
-    '    <div class="card"><div class="accent accent-reminder"></div><div class="body"><div class="label">Reminder</div><div class="value">Review proposal · 5 PM</div></div></div>\n' +
-    '    <div class="card"><div class="accent accent-eta"></div><div class="body"><div class="label">ETA</div><div class="value">15:24 · 12 min</div></div></div>\n' +
-    '    <div class="card"><div class="accent accent-primary"></div><div class="body"><div class="label">Accent · primary</div><div class="value">Tap targets · selection · CTAs</div></div></div>\n' +
-    '  </div>\n' +
-    '</div>\n' +
-    '</body></html>\n';
+  // (3) theme-preview.html — comprehensive offline gallery.
+  //
+  //     Composed from three live sources, captured at download time so
+  //     the designer's current edits + active theme are baked in:
+  //
+  //       a) Cards-mode preview  → every themed card from #preview-grid
+  //       b) Screen-mode preview → 6 phone compositions w/ 1-col + 2-col mix
+  //       c) components.html     → the 22 base One UI 8.5 components
+  //
+  //     Plus the three sources' inlined CSS (genui.css atomic styles,
+  //     customize.html preview layout, components.html component styles)
+  //     so the file renders standalone from any folder. theme.css is
+  //     <link>ed LAST so the designer's tokens override the bases.
+  const html = await _buildPreviewGalleryHTML(theme);
 
   // README inside the ZIP — gives any designer who receives the file
   // pack a 30-second orientation without needing access to the site.
   const readme =
     '# ' + (theme.name || 'Theme') + ' template\n\n' +
-    'Three files, one purpose: tweak the theme tokens of Samsung One UI GenUI.\n\n' +
+    'A self-contained bundle for tweaking the theme tokens of Samsung One UI GenUI.\n\n' +
     '## Files\n\n' +
     '- `theme.css` — the editable variables. Open in any code editor.\n' +
     '- `theme.json` — machine-readable mirror (the tool reads this on import).\n' +
-    '- `theme-preview.html` — drag into a browser to see the cards rendered\n' +
-    '  with the current values.\n\n' +
+    '- `theme-preview.html` — drag into a browser to verify your edits. Has three sections:\n' +
+    '    1. **Cards** — every themed card from Customize → Cards mode\n' +
+    '    2. **Screen compositions** — 6 S26-ratio phones with mixed 1-col + 2-col groups\n' +
+    '    3. **One UI 8.5 base components** — the full primitive set (Buttons, FAB,\n' +
+    '       Toggle Switches, Checkboxes, Radios, Inputs, Search, Chips, Tabs, App Bar,\n' +
+    '       Bottom Nav, Cards, List Items, Dialogs, Bottom Sheet, Sliders, Progress,\n' +
+    '       Snackbar, Tooltips, Badges, Menus, Dividers — 22 in total)\n\n' +
     '## Edit\n\n' +
-    'Open `theme.css`, change any `--variable` value, save, refresh the\n' +
-    'preview HTML to verify.\n\n' +
+    'Open `theme.css`, change any `--variable` value, save, refresh\n' +
+    '`theme-preview.html` to verify.\n\n' +
     'Optional metadata at the top of `theme.css`:\n\n' +
     '```css\n' +
     '/*! oneui-theme: { "name": "Sunset Glow", "author": "you" } */\n' +
