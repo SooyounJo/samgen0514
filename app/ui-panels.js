@@ -38,40 +38,11 @@ function toggleSidebar() {
   else apply();
 })();
 
-// === CUSTOMIZE SIDE PANEL ===
-// Slides /customize in as an iframe on the right edge of .main
-// instead of popping a new browser tab. Lazy-loads the iframe src on
-// first open (so users who never click Customize don't pay for it).
-// `force` argument:
-//   undefined / null → toggle (default)
-//   true             → force open
-//   false            → force close
-// Exposed as window.toggleCustomizePanel because the pencil-icon
-// button uses an inline onclick attribute.
-function toggleCustomizePanel(force) {
-  const panel = document.getElementById('customizeSidePanel');
-  const frame = document.getElementById('customizePanelFrame');
-  if (!panel) return;
-  const wasOpen     = panel.classList.contains('open');
-  const shouldOpen  = (force === undefined || force === null) ? !wasOpen : !!force;
-  // Lazy iframe load — only when actually opening for the first time.
-  // Without this, the iframe boots customize.html on every page load
-  // even for users who never touch the pencil.
-  //
-  // We use the .html extension (not the clean /customize alias) so
-  // this works on both servers: node server.js maps /customize →
-  // /customize.html, but Python's http.server has no aliasing and
-  // would return "Error response" for /customize.
-  if (shouldOpen && frame && !frame.src) frame.src = '/customize.html';
-  panel.classList.toggle('open', shouldOpen);
-  panel.setAttribute('aria-hidden', shouldOpen ? 'false' : 'true');
+// === CUSTOMIZE (full page customize.html — no iframe side panel)
+function toggleCustomizePanel() {
+  window.location.href = 'customize.html';
 }
-// Close on ESC for keyboard parity with native browser dialogs.
-document.addEventListener('keydown', function (e) {
-  if (e.key !== 'Escape') return;
-  const panel = document.getElementById('customizeSidePanel');
-  if (panel && panel.classList.contains('open')) toggleCustomizePanel(false);
-});
+window.toggleCustomizePanel = toggleCustomizePanel;
 
 // === TABS ===
 function switchTab(idx, btn) {
@@ -101,7 +72,7 @@ function switchTab(idx, btn) {
 //   #design                  → Design tab
 //   #mlp / #mlp-prototype    → MLP Prototype tab
 //   #refine                  → (legacy) MLP slot, kept for backcompat
-//   ?customize=open          → opens the Customize side panel after boot
+//   ?customize=open          → redirect to customize.html (theme editor)
 window.addEventListener('DOMContentLoaded', () => {
   const hash = (location.hash || '').toLowerCase();
   if (hash === '#design' || hash === '#build') switchTab(6, null);
@@ -109,12 +80,11 @@ window.addEventListener('DOMContentLoaded', () => {
   else if (hash === '#refine') switchTab(7, null);
   else switchTab(5, null); // Force Generate as the landing tab
 
-  // Query-string trigger so a headless-Chrome screenshot run can pop
-  // the Customize side panel without needing to script a click.
+  // Query-string trigger: open full-page theme customizer (e.g. screenshot runs).
   if (/[?&]customize=open\b/.test(location.search)) {
-    // Defer one tick so other DOMContentLoaded handlers (theme picker,
-    // tab restore) finish first and the toggle finds the iframe slot.
-    setTimeout(() => { try { toggleCustomizePanel(true); } catch (_) {} }, 0);
+    setTimeout(function () {
+      try { window.location.replace('customize.html'); } catch (_) {}
+    }, 0);
   }
 });
 

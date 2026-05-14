@@ -887,6 +887,37 @@ function _pipelineShouldDockNowBarChild(child) {
   return !!(cid && PIPELINE_NOWBAR_DOCK_BOTTOM_IDS.has(cid));
 }
 
+/** Composer can emit two dock-eligible strips (e.g. playback state + prompt). Only
+ *  one belongs in the bottom session band — pick the best candidate. */
+function _pipelineDedupeDockedNowBars(elements) {
+  if (!elements || elements.length <= 1) return elements;
+  var bestIdx = 0;
+  var bestScore = -Infinity;
+  for (var i = 0; i < elements.length; i++) {
+    var el = elements[i];
+    var cid = (el && el.dataset && el.dataset.compType) || '';
+    var base =
+      cid === 'media_control_bar' ? 400
+        : cid === 'now-bar.charging' ? 360
+          : /^now-bar\./.test(cid) ? 300
+            : 100;
+    var pr = parseInt(
+      (el && el.dataset && (el.dataset.pipelinePriority || el.dataset.priority)) || '2',
+      10
+    );
+    if (!Number.isFinite(pr)) pr = 2;
+    /* Lower composer priority number = more important (1 = primary). */
+    var prBonus = (6 - Math.min(Math.max(pr, 0), 6)) * 20;
+    /* Earlier group/child order wins on tie (subtract tiny fraction per index). */
+    var score = base + prBonus - i * 0.01;
+    if (score > bestScore) {
+      bestScore = score;
+      bestIdx = i;
+    }
+  }
+  return [elements[bestIdx]];
+}
+
 /** Layout rect for session strip inside bottomNav, leaving room for gesture pill. */
 function _pipelineRectBottomSessionNowBar(z) {
   if (!z || !z.bottomNav) return null;
@@ -914,10 +945,22 @@ function _inferNowBarVariant(child, content, uiState) {
   if (/charging/.test(id) || tags.indexOf('now-bar:charging') >= 0 || tags.indexOf('charging') >= 0) {
     return { type: 'charging', percent: 69 };
   }
+  // Navigation turn-by-turn — must run BEFORE timer heuristics. Workout / running
+  // scenarios often include context tag "workout"; the timer branch below would
+  // otherwise steal navigation_turn_card and render a stopwatch strip instead of
+  // the maps-style pill (arrow · distance · instruction · ETA).
+  if (/navigation_turn|turn_card|nav-turn/.test(id) || /\bturn\b|navigation/.test(slot)) {
+    return Object.assign({ type: 'navigation' }, _parseNavVariant(content));
+  }
   // Timer semantics must win over the substring "media" inside **media_control_bar** —
   // otherwise cooking step timers render as a music strip (note icon + prev/play/next).
   const timerBySlot = /timer|workout|session_timer|timer_strip/.test(slot);
-  const timerByTag = tags.indexOf('now-bar:timer') >= 0 || tags.indexOf('workout') >= 0;
+  const timerByTag =
+    tags.indexOf('now-bar:timer') >= 0 ||
+    (tags.indexOf('workout') >= 0 &&
+      !/navigation_turn|turn_card|nav-turn/i.test(id) &&
+      id !== 'media_control_bar' &&
+      id !== 'now-bar.media-player');
   const timerByIcon = cIcon === 'timer' || cIcon === 'stopwatch';
   const timerByCopy =
     /\b(timer|countdown|stopwatch|simmer)\b/.test(cBlob) ||
@@ -1011,12 +1054,6 @@ function _inferNowBarVariant(child, content, uiState) {
       marquee: c.label + ' · ' + c.value
     };
   }
-  // Navigation turn-by-turn — gets its own rich type with parsed
-  // direction/distance/instruction for the renderer to lay out an arrow,
-  // a big distance, the instruction text, and an optional ETA.
-  if (/navigation_turn|turn_card|nav-turn/.test(id) || /\bturn\b|navigation/.test(slot)) {
-    return Object.assign({ type: 'navigation' }, _parseNavVariant(content));
-  }
   if (/voice|driving/.test(id + ' ' + slot) || tags.indexOf('now-bar:voice') >= 0 || tags.indexOf('driving') >= 0) {
     return { type: 'single-line', label: content.label || 'Voice ready' };
   }
@@ -1079,6 +1116,17 @@ function _parseInputVariant(content) {
   const label = String(c.label || '');
   const value = String(c.value || '');
 
+  const lines = value.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+  if (lines.length >= 2 && /weather|hour|outlook|forecast|detail|humidity|°|cloud|rain|wind|uv\b|next\s*\d/i.test(label + value)) {
+    const head = label.split(/\s*[·•|]\s*/)[0].trim() || 'Section';
+    return {
+      kind: 'chip_section',
+      title: head,
+      lines: capChipSectionLines(head, lines),
+      wrap: /detail|humidity|uv|wind|rain|metric/i.test(label)
+    };
+  }
+
   // Section header (uppercase from label)
   const labelHead = label.split(/\s*[·•|]\s*/)[0].trim();
   const section = labelHead ? labelHead.toUpperCase() : 'INPUT';
@@ -1104,6 +1152,54 @@ function _parseInputVariant(content) {
   return { kind: 'input', section, topic, detail, facets, imageUrl };
 }
 
+/**
+ * Split comma/pipe/bullet/slash-separated lists for chips & toggles.
+ * Slashes separate items EXCEPT in numeric fractions (e.g. 1/2, 3/4) so
+ * "Parmesan 1/2 cup" stays one chip (regression: naive / split).
+ */
+function splitListPreservingNumericFractions(raw) {
+  const s = String(raw || '');
+  if (!s.trim()) return [];
+  const fracs = [];
+  const masked = s.replace(/\b(\d+)\s*\/\s*(\d+)\b/g, function (full) {
+    fracs.push(full);
+    return '__FRAC_' + (fracs.length - 1) + '__';
+  });
+  const parts = masked.split(/\s*[,/|·•]\s*/);
+  return parts
+    .map(function (p) {
+      return p
+        .trim()
+        .replace(/__FRAC_(\d+)__/g, function (_, i) {
+          return fracs[+i] || '';
+        });
+    })
+    .filter(Boolean);
+}
+
+/**
+ * Chip sections can balloon into a tall stack of glass pills when the model
+ * emits one line per forecast hour. Cap by section intent so mobile layouts
+ * keep One UI–like padding and avoid "button spam".
+ */
+function capChipSectionLines(title, lines) {
+  const arr = Array.isArray(lines) ? lines.map(s => String(s).trim()).filter(Boolean) : [];
+  if (!arr.length) return arr;
+  const t = String(title || '').toLowerCase();
+  let max = 6;
+  if (/next\s*\d|hour|hours|\bhourly\b|오늘\s*\d시간|시간대/.test(t)) max = 4;
+  else if (/5[\s-]*day|daily outlook|week|요일별|일별/.test(t)) max = 5;
+  else if (/today|detail|details|metric|요약|상세/.test(t)) max = 4;
+  if (arr.length <= max) return arr;
+  return arr.slice(0, max);
+}
+
+function chipListHasMultipleSegments(raw) {
+  return splitListPreservingNumericFractions(raw).length > 1;
+}
+
+window.splitListPreservingNumericFractions = splitListPreservingNumericFractions;
+
 // Parse reminder content: due time, task title, count, priority.
 // Examples the LLM emits:
 //   label="Today's tasks", value="3 items · Due today"
@@ -1113,6 +1209,15 @@ function _parseReminderVariant(content) {
   const c     = content || {};
   const label = String(c.label || '');
   const value = String(c.value || '');
+  const lines = value.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+  if (lines.length >= 2) {
+    return {
+      kind: 'chip_section',
+      title: label.trim() || 'Section',
+      lines: capChipSectionLines(label, lines),
+      wrap: /detail|humidity|uv|wind|rain|metric|5-?day|outlook|forecast/i.test(label)
+    };
+  }
   const all   = label + ' · ' + value;
 
   // Due time: "5 PM", "5:30 PM", "Today", "Now", "Tomorrow"
@@ -1579,7 +1684,25 @@ function _adaptForBodyAtomic(atomicRole, child, content, uiState) {
       // For richer content (recipe step instructions) use kind='secondary'
       // so value renders as a body paragraph; for short content use the
       // default kind which renders title + sub.
-      const hasBody = (c.value || '').length > 28;
+      const rawVal = String(c.value || '');
+      const nl = rawVal.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+      const lb = String(c.label || '');
+      const looksForecast =
+        nl.length >= 2 &&
+        (/hour|outlook|forecast|detail|next\s*\d|5-?day|humidity|weather|\d\s*(?:pm|am)|°|°c|°f|cloud|rain|sunny|wind|uv\b/i.test(lb + ' ' + rawVal.slice(0, 160)));
+      if (looksForecast) {
+        comp.variant = Object.assign(
+          {
+            kind: 'chip_section',
+            title: lb.trim() || child.slot || child.componentId,
+            lines: capChipSectionLines(lb, nl),
+            wrap: /detail|humidity|uv|wind|rain|metric/i.test(lb)
+          },
+          img ? { imageUrl: img } : {}
+        );
+        break;
+      }
+      const hasBody = rawVal.length > 72;
       if (hasBody) {
         comp.variant = Object.assign(
           { kind: 'secondary', title: c.label || child.slot || child.componentId, body: c.value },
@@ -1727,16 +1850,17 @@ function _adaptForBodyAtomic(atomicRole, child, content, uiState) {
       let labelSrc = '';
       const vRaw = String(c.value || '').trim();
       const lRaw = String(c.label || '').trim();
-      const SEP = /\s*[,/|·•]\s*/;
-      const hasSep = (s) => SEP.test(s);
       if (child && child.componentId === 'action_chip_row') {
-        if (hasSep(vRaw)) labelSrc = vRaw;
-        else if (hasSep(lRaw)) labelSrc = lRaw;
+        if (chipListHasMultipleSegments(vRaw)) labelSrc = vRaw;
+        else if (chipListHasMultipleSegments(lRaw)) labelSrc = lRaw;
         else labelSrc = lRaw || vRaw || '';
       } else {
         labelSrc = lRaw || vRaw || '';
       }
-      const labels = labelSrc.split(SEP).map(s => s.trim()).filter(Boolean);
+      let labels = splitListPreservingNumericFractions(labelSrc);
+      if (child && child.componentId === 'action_chip_row' && labels.length > 24) {
+        labels = labels.slice(0, 24);
+      }
       comp.variant = {
         actions: labels.map((l, i) => ({
           label: l,
@@ -1758,7 +1882,7 @@ function _adaptForBodyAtomic(atomicRole, child, content, uiState) {
       const isRow = child && child.componentId === 'quick_toggle_row';
       if (isRow) {
         const labelSrc = c.label || c.value || '';
-        const items = labelSrc.split(/\s*[,/|·•]\s*/).map(s => s.trim()).filter(Boolean);
+        const items = splitListPreservingNumericFractions(labelSrc);
         const TOGGLE_ICON_MAP = [
           [/wifi|wireless/i,        'wifi'],
           [/bluetooth/i,            'bluetooth'],
@@ -2317,6 +2441,10 @@ function renderPipelineResponse(resp) {
   canvas.style.display       = 'flex';
   canvas.style.flexDirection = 'column';
   canvas.style.alignItems    = 'stretch';
+  canvas.style.height        = '';
+  canvas.style.maxHeight     = '';
+  canvas.style.overflow      = '';
+  delete canvas.dataset.pipelineDockedNowbar;
   const _isAppShell = uiState && uiState.baseSurface === 'app';
   const _lpBp = layoutPlan && layoutPlan.backgroundPolicy;
   const wantsPipelineBottomSheet =
@@ -2371,14 +2499,15 @@ function renderPipelineResponse(resp) {
     `var(--screen-padding-v, ${_padBot}px) ` +
     `var(--screen-padding-h, ${padH}px)`;
 
-  // Fill the phone frame vertically: sparse composer output (e.g. 2 short
-  // cards) used to hug the top leaving ~70% empty black space. Stretch the
-  // canvas column to the device's usable viewport and grow primary-task
-  // groups + a flexible hero tile so layouts read "full-screen" rather than a
-  // tiny stamp in the corner.
+  // Fill the phone frame vertically: stretch the pipeline canvas to the full
+  // layout viewport height. createOneUILayout zones (bottomNav, docked now-bar
+  // y) are expressed in that same coordinate system — previously minHeight was
+  // usableContentH (viewport minus chrome), so rDock.y (~860) exceeded #canvas
+  // height (~790) and absolute-positioned session pills were clipped under the
+  // device frame (only the top edge of "The Weeknd…" visible).
   const viewportH = layout && layout.viewport ? layout.viewport.height : (canvas.clientHeight || 978);
   const usableContentH = Math.max(360, viewportH - topReserve - bottomReserve - 24);
-  canvas.style.minHeight = usableContentH + 'px';
+  canvas.style.minHeight = viewportH + 'px';
   canvas.dataset.pipelineFillViewport = '1';
 
   if (canvas) {
@@ -2706,7 +2835,31 @@ function renderPipelineResponse(resp) {
         var pct = 100 / cols;
         var gg = _isAppShell ? appGapPx : (group.gap != null ? +group.gap : 10);
         var gutter = cols > 1 ? (gg * (cols - 1)) / cols : 0;
-        if (asymHeroActionPair && cols === 2 && visibleOrdered.length === 2) {
+        // Chip / toggle rows must span the full group width. Otherwise each
+        // row sits in a ~50% grid cell and pills center *within that half*
+        // — reads as pinned to the far left/right of the card (Music hubs,
+        // etc. when the model emits one action_chip_row per chip).
+        var cidGrid = (child && child.componentId) || '';
+        var arGrid = el.dataset.atomicRole || '';
+        var fullBleedActionRow =
+          arGrid === 'action-row' ||
+          arGrid === 'toggle-chip' ||
+          cidGrid === 'action_chip_row' ||
+          cidGrid === 'quick_toggle_row';
+        /* Hero-wide atomics (media player, progress) must span the full group
+           width — otherwise default grid flex (50% / N cols) leaves a half-
+           empty card hugging the left (empty space on the right). */
+        var fullBleedWideAtomic =
+          arGrid === 'media-card' ||
+          cidGrid === 'media-card' ||
+          arGrid === 'progress-track' ||
+          cidGrid === 'music_progress_strip';
+        if (fullBleedActionRow || fullBleedWideAtomic) {
+          el.style.flex = '0 1 100%';
+          el.style.minWidth = '0';
+          el.style.maxWidth = '100%';
+          el.style.boxSizing = 'border-box';
+        } else if (asymHeroActionPair && cols === 2 && visibleOrdered.length === 2) {
           var otherG = visibleOrdered[0] === child ? visibleOrdered[1] : (visibleOrdered[1] === child ? visibleOrdered[0] : null);
           if (otherG) {
             var pctCol = _pipelineChildIsSubjectColumn(child, otherG) ? 58 : 42;
@@ -2820,14 +2973,22 @@ function renderPipelineResponse(resp) {
     if (groupEl.children.length > 0) sheetMount.appendChild(groupEl);
   });
 
+  dockedNowBarElements = _pipelineDedupeDockedNowBars(dockedNowBarElements);
+
   if (dockedNowBarElements.length && z && canvas) {
     var rDock = _pipelineRectBottomSessionNowBar(z);
     if (rDock) {
-      /* Session strip sits at rDock.y inside bottomNav. Padding was only
-         bottomNav.h — less than (viewport − rDock.y), so primary-task cards
-         could extend into the strip band and overlap the docked pill. */
+      /* Session strip: pin with `bottom` so when primary-task content is tall,
+         #canvas height stays locked to the layout viewport — otherwise a
+         growing flex column moved `top:rDock.y` into the middle of the
+         glass card (overlap / half-in-half-out clipping). Padding keeps
+         in-flow groups above the strip band. */
       if (layout && layout.viewport && Number.isFinite(layout.viewport.height)) {
         var Hvp = layout.viewport.height;
+        canvas.style.height = Hvp + 'px';
+        canvas.style.maxHeight = Hvp + 'px';
+        canvas.style.overflow = 'hidden';
+        canvas.dataset.pipelineDockedNowbar = '1';
         var gapAboveStrip = 16;
         var neededBottomPad = Hvp - rDock.y + gapAboveStrip;
         var basePadB2 = Math.max(Number.isFinite(padB) ? padB : 14, bottomReserve + 4);
@@ -2838,20 +2999,25 @@ function renderPipelineResponse(resp) {
           newPadB + 'px ' +
           padH + 'px';
       }
+      var HvpDock = layout && layout.viewport && Number.isFinite(layout.viewport.height)
+        ? layout.viewport.height
+        : 978;
+      var stripH = Math.min(rDock.h, 72);
+      var baseFromBottom = HvpDock - rDock.y - stripH;
       dockedNowBarElements.forEach(function dockMount(el, idx) {
-        var yStack = rDock.y - idx * 68;
-        if (yStack < z.bottomNav.y) yStack = z.bottomNav.y + 2;
+        var stackLift = idx * (stripH + 8);
         el.style.position = 'absolute';
+        el.style.top = 'auto';
+        el.style.bottom = (baseFromBottom + stackLift) + 'px';
         /* Center the bottom rail in #canvas — rDock.x assumes raw frame safe
            insets; composer padding/zoom can desync so the pill hugged the left. */
         el.style.left = '50%';
         el.style.right = 'auto';
         el.style.setProperty('transform', 'translateX(-50%)', 'important');
-        el.style.top = yStack + 'px';
-        /* now-bar atomic uses width:auto!important in genui.css — without !important
-           the wrapper shrinks to the 248px pill and sits flush-low in the rail. */
-        el.style.setProperty('width', rDock.w + 'px', 'important');
-        el.style.setProperty('max-width', '100%', 'important');
+        /* Fill the padded canvas row up to the layout rail width — a raw rDock.w
+           px width can exceed the content box and clip under overflow:hidden. */
+        el.style.setProperty('width', '100%', 'important');
+        el.style.setProperty('max-width', rDock.w + 'px', 'important');
         el.style.setProperty('min-width', '0', 'important');
         el.style.minHeight = /* media/timer pill can be 68px tall */ Math.min(rDock.h, 72) + 'px';
         el.style.height = 'auto';

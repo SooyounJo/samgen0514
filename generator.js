@@ -32,6 +32,15 @@
 
 'use strict';
 
+/** @see typography-rules.js — 폰트/자간 강제 단일 진입점 */
+function _TypographyRulesResolve() {
+  if (typeof TypographyRules !== 'undefined') return TypographyRules;
+  try {
+    if (typeof require !== 'undefined') return require('./typography-rules');
+  } catch (eTr) { /* omit */ }
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 //  Token tables
 // ---------------------------------------------------------------------------
@@ -2998,13 +3007,43 @@ if (typeof window !== 'undefined' && !DESIGN_RULES) {
 
 // Fallback rules used if JSON isn't loaded yet (first paint during async).
 // Kept small and compatible — real rules override these.
+var _TypographyRulesBootstrap = _TypographyRulesResolve();
 var FALLBACK_RULES = {
-  typography: {
-    family: { system: "'One UI Sans APP VF', Inter, sans-serif",
-              clock:  "'Space Grotesk', Inter, sans-serif" },
-    weight: { regular: 400, medium: 500, semibold: 600, bold: 700 },
-    size:   { caption: 12, label: 14, body: 15, title: 16, heading: 18 },
-    color:  { primary: '#FFFFFF', secondary: '#CFCCCF', statusBar: 'rgba(255,255,255,0.8)' }
+  typography: (_TypographyRulesBootstrap && _TypographyRulesBootstrap.MINIMAL_FALLBACK_TYPOGRAPHY)
+    ? _TypographyRulesBootstrap.MINIMAL_FALLBACK_TYPOGRAPHY
+    : {
+      family: { system: "'One UI Sans APP VF', Inter, sans-serif",
+                clock:  "'Space Grotesk', Inter, sans-serif" },
+      weight: { regular: 400, medium: 500, semibold: 600, bold: 700 },
+      size:   { micro: 14, caption: 14, label: 16, body: 18, title: 20, heading: 22, large: 24, date: 24, headline: 26, hero: 112 },
+      color:  { primary: '#FFFFFF', secondary: '#CFCCCF', statusBar: 'rgba(255,255,255,0.8)' },
+      lineHeight: { hero: 82, body: 24, title: 28, display: 32 },
+      letterSpacing: {
+        none: 0, statusCarrier: 0.15, sectionUppercase: 0.4,
+        micro: 0.1, small: 0.15
+      },
+      typeScale: {
+        display: { lineHeightPx: 32, letterSpacingPx: 0 },
+        title:   { lineHeightPx: 28, letterSpacingPx: 0 },
+        body:    { lineHeightPx: 24, letterSpacingPx: 0 },
+        label:   { lineHeightPx: 22, letterSpacingPx: 0 },
+        meta:    { lineHeightPx: 18, letterSpacingPx: 0.1 }
+      },
+      _sizeTierMap: {
+        micro: 'meta', caption: 'meta', label: 'label', body: 'body',
+        title: 'title', heading: 'title', large: 'display', date: 'display',
+        headline: 'display', hero: 'hero'
+      }
+    },
+  layoutRhythm: {
+    textStackGapKey: 'sm',
+    textParagraphGapKey: 'md',
+    inlineIconGapKey: 'sm',
+    listRowGapKey: 'md',
+    chipRowGapKey: 'md',
+    cardPaddingVerticalKey: 'xxl',
+    cardPaddingHorizontalKey: 'xl',
+    groupSectionGapKey: '4xl'
   },
   glass: {
     shortcutCircle: { bg:'rgba(55,55,55,0.3)', blur:6,  border:'0.25px solid rgba(55,55,55,0.3)' },
@@ -3012,7 +3051,7 @@ var FALLBACK_RULES = {
     nowBar:         { bg:'rgba(23,23,26,0.3)', blur:12, border:'0.25px solid rgba(55,55,55,0.3)' },
     panel:          { bg:'rgba(23,23,26,0.3)', blur:25, border:'1px solid rgba(255,255,255,0.2)' }
   },
-  radius:  { card: 14, medium: 18, widget: 20, pill: 32, dialog: 36, panel: 40, container: 50, circle: 63.636 },
+  radius:  { small: 20, card: 20, medium: 20, widget: 20, pill: 32, dialog: 20, panel: 20, container: 20, circle: 63.636 },
   spacing: { xs: 4, sm: 6, md: 8, base: 10, lg: 12, xl: 14, xxl: 16, '3xl': 18, '4xl': 20 },
   statusBar: {
     height: 44, paddingX: 10, paddingY: 16, gap: 6,
@@ -3027,20 +3066,19 @@ function _rules() { return _loadDesignRules() || FALLBACK_RULES; }
 
 // ----- Single-property helpers --------------------------------------------
 function typography(size, options) {
-  var r = _rules().typography;
+  var rules = _rules();
+  var r = rules.typography;
   var o = options || {};
+  var Tr = _TypographyRulesResolve();
+  if (Tr && typeof Tr.buildTypographyStyle === 'function') {
+    return Tr.buildTypographyStyle(r, size, o);
+  }
   var family = o.family === 'clock' ? r.family.clock : r.family.system;
   var weight = r.weight[o.weight || 'regular'];
   var px = r.size[size] || r.size.body;
-  var lh = o.lineHeight
-    ? (typeof o.lineHeight === 'number' ? o.lineHeight + 'px' : o.lineHeight)
-    : 'normal';
-  var ls = o.letterSpacing != null
-    ? (typeof o.letterSpacing === 'number' ? o.letterSpacing + 'px' : o.letterSpacing)
-    : '0';
   var color = o.color ? (r.color[o.color] || o.color) : r.color.primary;
   return 'font-family:' + family + ';font-weight:' + weight + ';font-size:' + px +
-         'px;line-height:' + lh + ';letter-spacing:' + ls + ';color:' + color + ';';
+    'px;line-height:normal;letter-spacing:0;color:' + color + ';';
 }
 
 function glass(tier) {
@@ -3052,11 +3090,24 @@ function glass(tier) {
 }
 
 function radius(tier) {
-  return (_rules().radius[tier] != null ? _rules().radius[tier] : 14) + 'px';
+  return (_rules().radius[tier] != null ? _rules().radius[tier] : 20) + 'px';
 }
 
 function spacing(tier) {
   return (_rules().spacing[tier] != null ? _rules().spacing[tier] : 8) + 'px';
+}
+
+// layoutRhythm 카드키 → 해당 spacing 토큰의 px 문자열 (카드 패딩·텍스트 스택 간격 통일용)
+function layoutRhythm(rhythmKey) {
+  var rules = _rules();
+  var Tr = _TypographyRulesResolve();
+  if (Tr && typeof Tr.layoutRhythmPx === 'function') {
+    var pr = Tr.layoutRhythmPx(rules, rhythmKey);
+    if (pr) return pr;
+  }
+  var lr = rules.layoutRhythm || {};
+  var spacingToken = lr[rhythmKey];
+  return spacingToken ? spacing(spacingToken) : null;
 }
 
 // ----- HTML-producing helpers ---------------------------------------------
@@ -3075,7 +3126,10 @@ function statusBarHTML(opts) {
            '<span style="font-family:' + r.typography.family.system + ';' +
              'font-weight:' + r.typography.weight[sb.carrierWeight] + ';' +
              'font-size:' + sb.carrierFontSize + 'px;line-height:12px;' +
-             'letter-spacing:0.15px;color:' + color + ';white-space:nowrap;flex-shrink:0;">' +
+             'letter-spacing:' + ((r.typography.letterSpacing &&
+               r.typography.letterSpacing.statusCarrier != null)
+               ? r.typography.letterSpacing.statusCarrier + 'px'
+               : '0.15px') + ';color:' + color + ';white-space:nowrap;flex-shrink:0;">' +
              carrier + '</span>' +
            '<div style="flex:1 0 0;align-self:stretch;"></div>' +
            '<div style="display:flex;align-items:center;gap:' + r.spacing.xs + 'px;flex-shrink:0;">' +
@@ -3139,6 +3193,8 @@ const Generator = {
   glass,
   radius,
   spacing,
+  layoutRhythm,
+  typographyRules: _TypographyRulesResolve,
   statusBarHTML,
   wallpaperHTML,
   wrapInGlass,

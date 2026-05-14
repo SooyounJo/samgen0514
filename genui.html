@@ -152,9 +152,26 @@
     <a class="topbar-brand" href="index.html">SAMSUNG <span>GenUI</span></a>
   </div>
   <div class="topbar-right">
-    <!-- Theme picker + Export + Clear moved into the Generate tab so
-         the topbar stays minimal (just the brand). See "Canvas controls"
-         row below the Run Pipeline button in Generate panel. -->
+    <!-- Theme: always visible top-right — same dropdown + pencil as sidebar;
+         avoids “where did theme go?” when Generate panel is scrolled. -->
+    <span id="topbarThemePicker" style="display:inline-flex;align-items:center;gap:2px;padding:0 4px 0 10px;border-radius:8px;background:rgba(255,255,255,0.04);border:1px solid var(--divider);height:28px;">
+      <span style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:0.4px;">Theme</span>
+      <select id="themePickerSelect"
+        onchange="applyThemeFromPicker(this.value)"
+        title="Switch theme — affects all rendered cards and page chrome"
+        style="appearance:none;background:transparent;color:var(--text);border:0;outline:none;font-family:var(--font);font-size:11px;font-weight:500;padding:0 18px 0 6px;cursor:pointer;background-image:url(&quot;data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E&quot;);background-repeat:no-repeat;background-position:right 4px center;height:24px;">
+        <option value="" disabled selected>Loading…</option>
+      </select>
+      <a class="customize-open-btn" href="customize.html"
+              title="Theme customizer — opens full page"
+              aria-label="Open theme customizer"
+              style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;margin-left:4px;border:0;border-left:1px solid var(--divider);border-radius:0;padding:0 0 0 6px;background:transparent;color:var(--text-3);cursor:pointer;transition:color 0.15s ease;text-decoration:none;">
+        <svg width="13" height="13" viewBox="0 0 17.55 17.55" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <path d="M7.521 14.976C7.329 15.168 6.596 15.723 6.324 15.777L1.156 16.79C0.884 16.844 0.706 16.665 0.759 16.393L1.773 11.228C1.827 10.956 2.381 10.222 2.573 10.030M7.709 14.793C7.417 15.085 6.940 15.085 6.648 14.793L2.759 10.904C2.468 10.612 2.468 10.135 2.759 9.843L11.266 1.336C12.047 0.555 13.313 0.555 14.095 1.336L16.216 3.458C16.997 4.238 16.997 5.504 16.216 6.286L7.709 14.793Z"
+                stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </a>
+    </span>
 
     <!-- Device selector removed — site is Galaxy S26-only by default.
          The element below is kept hidden so toggleDeviceList / selectDevice
@@ -186,8 +203,7 @@
          getElementById without errors; the visual is suppressed. -->
     <div id="agentModeIndicator" class="agent-mode-indicator local" onclick="toggleAgentMode()" style="display:none;" title="Local / AI agent mode (hidden — Pipeline is always active)">Local</div>
 
-    <!-- Export + Clear moved into the Generate tab (canvas controls
-         row beneath Run Pipeline). Topbar stays clean. -->
+    <!-- Export + Clear remain in Generate tab if present; Theme is above. -->
   </div>
 </div>
 
@@ -664,38 +680,7 @@
                  (and the inline ai-send-btn icon) both call pipelineGenerate()
                  already, making the big button redundant. -->
 
-            <!-- Theme picker — sits LEFT of the run toggles so the
-                 "choose look" decision precedes "choose run options"
-                 visually. The pencil icon (outline variant from OneUI
-                 Design Kit · node 341:39) sits inside the same pill,
-                 right of the dropdown chevron, and opens /customize. -->
-            <span id="topbarThemePicker" style="display:inline-flex;align-items:center;gap:2px;padding:0 4px 0 10px;border-radius:8px;background:rgba(255,255,255,0.04);border:1px solid var(--divider);height:28px;">
-              <span style="font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:0.4px;">Theme</span>
-              <select id="themePickerSelect"
-                onchange="applyThemeFromPicker(this.value)"
-                title="Switch theme — affects all rendered cards and page chrome"
-                style="appearance:none;background:transparent;color:var(--text);border:0;outline:none;font-family:var(--font);font-size:11px;font-weight:500;padding:0 18px 0 6px;cursor:pointer;background-image:url(&quot;data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E&quot;);background-repeat:no-repeat;background-position:right 4px center;height:24px;">
-                <option value="" disabled selected>Loading…</option>
-              </select>
-              <!-- Pencil → opens the Theme Customizer as a SIDE PANEL on the
-                   right of .main (not a new browser tab). The toggle function
-                   lazy-loads the iframe on first click and slides the panel
-                   in via the .open class. Repeat clicks (or ESC, or × in the
-                   panel header) close it. Markup is a <button> rather than
-                   an <a> because there's no navigation target — it's an
-                   in-page UI affordance. -->
-              <button type="button" class="customize-open-btn"
-                      onclick="toggleCustomizePanel()"
-                      title="Customize theme — slides in on the right"
-                      aria-label="Customize theme"
-                      aria-controls="customizeSidePanel"
-                      style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;margin-left:4px;border:0;border-left:1px solid var(--divider);border-radius:0;padding:0 0 0 6px;background:transparent;color:var(--text-3);cursor:pointer;transition:color 0.15s ease;">
-                <svg width="13" height="13" viewBox="0 0 17.55 17.55" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                  <path d="M7.521 14.976C7.329 15.168 6.596 15.723 6.324 15.777L1.156 16.79C0.884 16.844 0.706 16.665 0.759 16.393L1.773 11.228C1.827 10.956 2.381 10.222 2.573 10.030M7.709 14.793C7.417 15.085 6.940 15.085 6.648 14.793L2.759 10.904C2.468 10.612 2.468 10.135 2.759 9.843L11.266 1.336C12.047 0.555 13.313 0.555 14.095 1.336L16.216 3.458C16.997 4.238 16.997 5.504 16.216 6.286L7.709 14.793Z"
-                        stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-              </button>
-            </span>
+            <!-- Theme picker lives in .topbar-right (above) -->
 
             <!-- Auto-iterate toggle: when ON, after each generate the system
                  captures a snapshot, applies mechanical auto-fixes, and re-runs
@@ -735,7 +720,7 @@
             <details class="pipeline-features-details" id="pipelineFeaturesDetails" title="Turn individual pipeline features on/off and watch the latency / quality impact." style="flex-basis:100%;margin-top:6px;border-radius:8px;border:1px solid var(--divider);background:rgba(255,255,255,0.02);padding:8px 10px;">
               <summary style="cursor:pointer;user-select:none;font-size:11px;color:var(--text-2);font-weight:600;display:flex;align-items:center;gap:6px;">
                 <span>Pipeline features</span>
-                <span id="pipelineFeaturesSummary" style="font-size:10px;color:var(--text-3);font-weight:400;">8 / 8 on</span>
+                <span id="pipelineFeaturesSummary" style="font-size:10px;color:var(--text-3);font-weight:400;">10 / 10 on</span>
                 <span style="flex:1;"></span>
                 <!-- Check/Uncheck all toggle. Lives inside the summary
                      but click is captured (stopPropagation) so it does
@@ -760,13 +745,13 @@
                   <input type="checkbox" class="pf-flag" data-feature="explain" checked style="margin:0;">
                   <span>Explain (S7)</span>
                 </label>
-                <label class="pf-toggle" title="4-tier dedup ladder. Strips duplicate-labeled / cross-type-identical components from the plan." style="display:inline-flex;align-items:center;gap:6px;font-size:10.5px;color:var(--text-2);cursor:pointer;">
-                  <input type="checkbox" class="pf-flag" data-feature="dedup" checked style="margin:0;">
+                <label class="pf-toggle" title="Off by default (static presets × N with different text stays intact). When ON, removes duplicate-labeled rows." style="display:inline-flex;align-items:center;gap:6px;font-size:10.5px;color:var(--text-2);cursor:pointer;">
+                  <input type="checkbox" class="pf-flag" data-feature="dedup" style="margin:0;">
                   <span>Dedup ladder</span>
                 </label>
-                <label class="pf-toggle" title="Per-type cap (≤ 3 of same componentType)." style="display:inline-flex;align-items:center;gap:6px;font-size:10.5px;color:var(--text-2);cursor:pointer;">
-                  <input type="checkbox" class="pf-flag" data-feature="typeCap" checked style="margin:0;">
-                  <span>Type cap (≤3)</span>
+                <label class="pf-toggle" title="Off by default. When ON, limit to 24 instances per componentType (same preset repeated many times)." style="display:inline-flex;align-items:center;gap:6px;font-size:10.5px;color:var(--text-2);cursor:pointer;">
+                  <input type="checkbox" class="pf-flag" data-feature="typeCap" style="margin:0;">
+                  <span>Type cap (≤24)</span>
                 </label>
                 <label class="pf-toggle" title="Auto-grid: 3+ same-type TILE cards promote to 2-col grid. Whitelist excludes text-heavy cards." style="display:inline-flex;align-items:center;gap:6px;font-size:10.5px;color:var(--text-2);cursor:pointer;">
                   <input type="checkbox" class="pf-flag" data-feature="autoGrid" checked style="margin:0;">
@@ -783,6 +768,10 @@
                 <label class="pf-toggle" title="Composer backfill: re-add Selected Components the composer LLM silently dropped." style="display:inline-flex;align-items:center;gap:6px;font-size:10.5px;color:var(--text-2);cursor:pointer;">
                   <input type="checkbox" class="pf-flag" data-feature="composerBackfill" checked style="margin:0;">
                   <span>Composer backfill</span>
+                </label>
+                <label class="pf-toggle" title="Deterministic Step 4: lay out STEP-3 picks like the /customize gallery — one preset tile per row, reference order, 2-col grid when 2+ tiles. Skips composer LLM (faster)." style="display:inline-flex;align-items:center;gap:6px;font-size:10.5px;color:var(--text-2);cursor:pointer;">
+                  <input type="checkbox" class="pf-flag" data-feature="presetStitch" checked style="margin:0;">
+                  <span>Preset stitch (no composer LLM)</span>
                 </label>
                 <label class="pf-toggle" title="Mandatory injection: surface-required chrome (status-bar / header) added if LLM didn't pick it." style="display:inline-flex;align-items:center;gap:6px;font-size:10.5px;color:var(--text-2);cursor:pointer;">
                   <input type="checkbox" class="pf-flag" data-feature="mandatoryInject" checked style="margin:0;">
@@ -816,11 +805,8 @@
               <span id="autoIterCount" style="margin-left:4px;color:#3E91FF;">(0)</span>
             </button>
 
-            <!-- Theme picker moved to the topbar (alongside Light/Dark
-                 + Clear) — it's a global app preference, not a per-
-                 generate action. See genui.html line ~177 for the new
-                 location, and the bootstrap at the top of this file
-                 still wires up #themePickerSelect identically. -->
+            <!-- Theme picker + 연필(커스터마이즈)는 상단바. 커스터마이즈는
+                 customize.html 전체 페이지로 이동. -->
 
             <span style="font-size:10px;color:var(--text-3);flex-basis:100%;margin-top:2px;">Streams each step&apos;s JSON output below</span>
           </div>
@@ -1776,27 +1762,6 @@
     </div>
   </div>
 
-  <!-- Customize side panel — slides in from the right with an iframe
-       pointing at /customize. The iframe is loaded lazily on first
-       open so a user who never clicks Customize doesn't pay for it.
-       Sits ABOVE the canvas via z-index and absolutely positioned
-       within .main (which has position:relative). Close by the × in
-       the header or by toggling the pencil icon again. -->
-  <!-- Initial-state / open-state styles live in css/genui.css (look for
-       #customizeSidePanel). Putting them in CSS instead of inline is
-       intentional: inline styles have specificity 1,0,0,0 which would
-       beat the `.open` rule and leave the panel stuck off-screen. -->
-  <aside id="customizeSidePanel" aria-hidden="true">
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--divider);flex-shrink:0;background:rgba(10,10,12,0.4);">
-      <span style="font-size:12px;font-weight:700;color:var(--text-2);text-transform:uppercase;letter-spacing:0.5px;">Customize</span>
-      <button onclick="toggleCustomizePanel(false)" aria-label="Close customize panel"
-              style="background:none;border:0;cursor:pointer;color:var(--text-3);font-size:20px;line-height:1;padding:4px 8px;border-radius:6px;transition:color 0.15s,background 0.15s;"
-              onmouseover="this.style.color='var(--text)';this.style.background='rgba(255,255,255,0.05)';"
-              onmouseout="this.style.color='var(--text-3)';this.style.background='none';">×</button>
-    </div>
-    <iframe id="customizePanelFrame" title="Theme Customizer" style="flex:1;border:0;width:100%;background:var(--pg-bg,#0a0a0c);" loading="lazy"></iframe>
-  </aside>
-
   <!-- Sidebar collapse toggle — sits between sidebar and canvas.
        Click to slide sidebar out / back in. State persists to
        localStorage (oneui-sidebar-collapsed). -->
@@ -1855,6 +1820,7 @@
 
 <script src="ui-state.js"></script>
 <script src="figma-refs/icon_library.js"></script>
+<script src="typography-rules.js"></script>
 <script src="generator.js"></script>
 <script src="design_memory.js"></script>
 <script src="app/state.js"></script>
@@ -1870,12 +1836,7 @@
 <script src="app/scenes.js"></script>
 <script src="app/scene-inspector.js"></script>
 <script src="app/cached-screens.js"></script>
-<!-- Cache-buster v=2026-05-12-customize-panel: forces browsers to
-     fetch the latest ui-panels.js. The previous version cached the
-     `frame.src = '/customize'` line which 404'd on the Python static
-     server (no /customize → /customize.html alias). New version uses
-     the .html extension so it works on both node and Python servers. -->
-<script src="app/ui-panels.js?v=2026-05-13-deeplinks"></script>
+<script src="app/ui-panels.js?v=2026-05-13-customize-page"></script>
 <script src="app/main.js"></script>
 </body>
 </html>

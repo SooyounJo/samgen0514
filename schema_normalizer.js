@@ -73,11 +73,11 @@ function _summarize(value) {
   if (value === undefined) return '<undefined>';
   if (value === null) return null;
   const t = typeof value;
-  if (t === 'string')  return value.length > 80 ? value.slice(0, 77) + '...' : value;
+  if (t === 'string')  return value.length > 500 ? value.slice(0, 497) + '...' : value;
   if (t === 'number' || t === 'boolean') return value;
   try {
     const s = JSON.stringify(value);
-    return s.length > 80 ? s.slice(0, 77) + '...' : s;
+    return s.length > 500 ? s.slice(0, 497) + '...' : s;
   } catch (_) { return '<unserializable>'; }
 }
 

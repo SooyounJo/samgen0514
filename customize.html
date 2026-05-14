@@ -31,7 +31,7 @@
     --surface-bg-size: auto;
     --surface-animation: none;
     --qs-tile-bg: rgba(23,23,26,0.80);
-    --card-radius: 36px;
+    --card-radius: 20px;
     --card-padding-v: 14px;
     --card-padding-h: 16px;
     --card-gap: 6px;
@@ -58,16 +58,16 @@
     --card-ai-shimmer-speed: 3.6s;
     --card-input-topic-size: 20px;
 
-    /* ── Typography (new) ── */
+    /* ── Typography — design_rules.json typeScale 5단 (meta/label/body/title/display, 최소 14px) */
     --font-family-display: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
     --font-family-body:    'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
     --font-family-mono:    'Space Mono', 'SF Mono', Menlo, monospace;
-    --font-size-xs:        11px;
-    --font-size-sm:        13px;
-    --font-size-md:        15px;
-    --font-size-lg:        18px;
-    --font-size-xl:        24px;
-    --font-size-display:   32px;
+    --font-size-xs:        14px;  /* meta */
+    --font-size-sm:        16px;  /* label */
+    --font-size-md:        18px;  /* body */
+    --font-size-lg:        22px;  /* title */
+    --font-size-xl:        26px;  /* display */
+    --font-size-display:   26px;
     --font-weight-regular:  400;
     --font-weight-medium:   500;
     --font-weight-semibold: 600;
@@ -143,12 +143,12 @@
     display: flex; align-items: center; gap: 16px;
   }
   header h1 { margin: 0; font-size: 18px; font-weight: 600; }
-  header .sub { color: var(--text-3); font-size: 13px; }
+  header .sub { color: var(--text-3); font-size: 14px; }
   header .nav { margin-left: auto; display: flex; gap: 12px; }
   header .nav a {
     padding: 6px 12px; border-radius: 8px;
     background: var(--panel); border: 1px solid var(--border);
-    color: var(--text-2); font-size: 13px;
+    color: var(--text-2); font-size: 14px;
   }
 
   /* Toolbar (sticky theme dropdown + actions) */
@@ -159,14 +159,23 @@
     border-bottom: 1px solid var(--border);
     display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
   }
-  .toolbar label { font-size: 12.5px; color: var(--text-3); margin-right: 4px; text-transform: uppercase; letter-spacing: 0.4px; }
+  .toolbar-back {
+    display: inline-flex; align-items: center;
+    padding: 6px 12px; border-radius: 8px;
+    background: var(--panel); border: 1px solid var(--border);
+    color: var(--text-2); font-size: 14px; font-weight: 600;
+    text-decoration: none; margin-right: 4px;
+  }
+  .toolbar-back:hover { color: var(--text); border-color: var(--accent-primary, #0381FE); }
+
+  .toolbar label { font-size: 14px; color: var(--text-3); margin-right: 4px; text-transform: uppercase; letter-spacing: 0.4px; }
   .preview-bg-swatches {
     display: inline-flex;
     align-items: center;
     gap: 8px;
   }
   .preview-bg-swatches .swatch-label {
-    font-size: 12.5px;
+    font-size: 14px;
     color: var(--text-3);
     text-transform: uppercase;
     letter-spacing: 0.4px;
@@ -192,7 +201,7 @@
   }
   .flat-scheme-toggle.visible { display: inline-flex; }
   .flat-scheme-toggle .scheme-label {
-    font-size: 12.5px;
+    font-size: 14px;
     color: var(--text-3);
     text-transform: uppercase;
     letter-spacing: 0.4px;
@@ -203,7 +212,7 @@
     background: var(--panel-2);
     color: var(--text-2);
     border: 1px solid var(--border);
-    font-size: 12px;
+    font-size: 14px;
     font-weight: 600;
   }
   .flat-scheme-btn[aria-pressed="true"] {
@@ -270,13 +279,7 @@
     /* Inherits nothing; receives all live theme vars via inline style in applyThemeVars */
   }
   @media (max-width: 820px) {
-    /* Stack vertically on truly narrow screens — editor first,
-       preview after. Threshold lowered from 1080 → 820 so when
-       customize.html is embedded as a side panel inside genui (≈ the
-       canvas width, typically 900–1500 px) the side-by-side editor +
-       preview layout stays active. The grid's first column has
-       minmax(300px, 360px) so it still works comfortably down to
-       ~620 px panel width; only below 820 do we stack. */
+    /* 좁은 뷰포트에서 에디터·프리뷰 세로 스택. */
     .layout-row { grid-template-columns: 1fr; }
     .editor-col { position: static; max-height: none; }
   }
@@ -304,7 +307,7 @@
     border: 0;
     border-radius: 999px;
     padding: 5px 14px;
-    font-size: 12px;
+    font-size: 14px;
     font-weight: 600;
     cursor: pointer;
     font-family: inherit;
@@ -357,7 +360,7 @@
     position: absolute;
     top: 6px; left: 50%;
     transform: translateX(-50%);
-    font-size: 9px;
+    font-size: var(--font-size-xs, 14px);
     font-weight: 600;
     color: var(--text-3, rgba(239,238,242,0.45));
     text-transform: uppercase;
@@ -404,6 +407,14 @@
      `color: transparent` approach — opacity always wins. */
   .preview-card-wrap {
     position: relative;
+    min-width: 0;
+    max-width: 100%;
+    width: 100%;
+    overflow: hidden;
+    box-sizing: border-box;
+  }
+  .preview-screen-group.is-grid > .preview-card-wrap {
+    min-width: 0;
   }
   .preview-card-kind-label {
     position: absolute;
@@ -437,13 +448,13 @@
     display: flex; align-items: center; justify-content: space-between;
     padding: 2px 4px 8px;
     color: var(--text-secondary, rgba(239,238,242,0.7));
-    font-size: var(--font-size-xs, 11px);
+    font-size: var(--font-size-xs, 14px);
     font-weight: var(--font-weight-medium, 500);
     letter-spacing: var(--letter-spacing-normal, 0);
   }
   .preview-screen-header {
     font-family: var(--font-family-display, 'Inter', sans-serif);
-    font-size: var(--font-size-lg, 18px);
+    font-size: var(--font-size-lg, 22px);
     font-weight: var(--font-weight-bold, 700);
     line-height: var(--line-height-tight, 1.2);
     letter-spacing: var(--letter-spacing-tight, -0.5px);
@@ -451,14 +462,14 @@
     padding: 0 4px 8px;
   }
   .preview-screen-hint {
-    font-size: 11.5px;
+    font-size: 14px;
     color: var(--text-3, rgba(239,238,242,0.45));
     text-align: center;
     line-height: 1.5;
   }
   .preview-screen-hint code {
     font-family: var(--font-family-mono, monospace);
-    font-size: 10.5px;
+    font-size: 13px;
     background: rgba(255,255,255,0.06);
     padding: 1px 5px;
     border-radius: 4px;
@@ -488,7 +499,7 @@
     outline: 2px solid var(--primary, #0381FE);
   }
   .preview-cell .name {
-    font-size: 11px; font-weight: 600;
+    font-size: var(--font-size-xs, 14px); font-weight: 600;
     color: var(--text-3);
     text-transform: uppercase; letter-spacing: 0.5px;
   }
@@ -509,7 +520,8 @@
   }
   .preview-cell .stage .stage-scale > * {
     width: 100%;
-    height: 100%;
+    height: auto;
+    box-sizing: border-box;
   }
   .preview-cell .stage::after {
     content: none;
@@ -591,7 +603,7 @@
     width: 100%; margin: 0 0 12px; padding: 0 0 10px;
     border: none; border-bottom: 1px solid var(--border);
     background: none; cursor: pointer; font: inherit;
-    font-size: 11px; font-weight: 700;
+    font-size: 14px; font-weight: 700;
     text-transform: uppercase; letter-spacing: 0.55px;
     color: var(--text-2);
     text-align: left;
@@ -601,7 +613,7 @@
   }
   .editor-section-toggle-label { min-width: 0; }
   .editor-section-chev {
-    flex-shrink: 0; font-size: 10px; opacity: 0.65;
+    flex-shrink: 0; font-size: 12px; opacity: 0.65;
     transition: transform 0.2s ease;
   }
   .editor-section-toggle[aria-expanded="false"] .editor-section-chev {
@@ -619,7 +631,7 @@
   }
   .editor-row:last-child { border-bottom: 0; padding-bottom: 2px; }
   .editor-row label {
-    font-size: 12.5px; color: var(--text-2);
+    font-size: 14px; color: var(--text-2);
     line-height: 1.35;
     white-space: normal;
     word-break: keep-all;
@@ -642,12 +654,12 @@
     flex: 1; min-width: 0;
     background: var(--panel-2); color: var(--text);
     border: 1px solid var(--border); border-radius: 6px;
-    padding: 6px 8px; font-size: 12.5px; font-family: inherit;
+    padding: 6px 8px; font-size: 14px; font-family: inherit;
   }
   .editor-row input[type="number"] { max-width: 80px; }
   .editor-row input[data-role="color-text"] { min-width: 12em; flex: 2; }
   .editor-row input[type="color"]:disabled { cursor: not-allowed; }
-  .editor-row .suffix { font-size: 11.5px; color: var(--text-3); }
+  .editor-row .suffix { font-size: 14px; color: var(--text-3); }
   .editor-actions {
     display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
     margin: 0;
@@ -658,13 +670,13 @@
     box-shadow: 0 2px 12px rgba(0, 0, 0, 0.28);
   }
   .editor-actions .spacer { flex: 1; }
-  .editor-actions .hint { font-size: 11.5px; color: var(--text-3); }
+  .editor-actions .hint { font-size: 14px; color: var(--text-3); }
 
   /* Save toast */
   .toast {
     position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
     padding: 10px 20px; background: var(--positive); color: #062;
-    border-radius: 999px; font-weight: 600; font-size: 13px;
+    border-radius: 999px; font-weight: 600; font-size: 14px;
     box-shadow: 0 8px 32px rgba(0,0,0,0.4);
     opacity: 0; pointer-events: none;
     transition: opacity 0.2s, transform 0.2s;
@@ -685,13 +697,11 @@
 </head>
 <body>
 
-<!-- Header chrome removed — when embedded as a side panel in genui's
-     main window, the host already provides identity. The active-pill
-     element is still referenced by JS (saveAsCustom / updateOnSelect),
-     so an INVISIBLE placeholder keeps those calls error-free. -->
+<!-- Standalone 페이지: 상단에서 GenUI로 돌아감 · active-pill 은 저장 후 토스트용 JS용. -->
 <span id="active-pill" style="display:none;"></span>
 
 <div class="toolbar">
+  <a href="genui.html" class="toolbar-back" title="GenUI 빌더로 돌아가기">← GenUI</a>
   <label>Theme</label>
   <select id="theme-select" class="theme-select"></select>
   <div class="flat-scheme-toggle" id="flat-scheme-toggle" aria-label="Flat theme color scheme">
@@ -781,6 +791,7 @@
      We load it AFTER our boot block so window.renderAtomicForRole becomes
      available without disturbing main-app rendering (it's just a function
      export — no side effects on the customize page). -->
+<script src="typography-rules.js"></script>
 <script src="app/atomics.js"></script>
 <script src="app/surface-layout.js"></script>
 
@@ -837,7 +848,7 @@ const PREVIEW_CARDS = [
     name: 'Message',
     editSections: ['Page', 'Card globals', 'Message card'],
     role: 'focus-block',
-    variant: { kind: 'message', sender: 'Alex', preview: 'Running 10 min late — see you at coffee', section: 'MESSAGES · 2 NEW' }
+    variant: { kind: 'message', sender: 'Alex', preview: 'see you at coffee shop', section: 'MESSAGES · 2 NEW' }
   },
   {
     name: 'ETA',
@@ -903,24 +914,52 @@ const PREVIEW_CARDS = [
       { name: 'Flashlight', icon: 'flashlight', on: false },
       { name: 'Airplane',   icon: 'airplane',   on: false }
     ] }
+  },
+  {
+    name: 'Now playing bar',
+    editSections: ['Page', 'Card globals', 'Navigation now-bar'],
+    role: 'now-bar',
+    variant: {
+      type: 'media',
+      title: 'Blinding Lights',
+      artist: 'The Weeknd',
+      marquee: 'Blinding Lights · The Weeknd · After Hours'
+    }
+  },
+  {
+    name: 'Media card',
+    editSections: ['Page', 'Card globals'],
+    role: 'media-card',
+    variant: { title: 'After Hours', artist: 'The Weeknd', service: 'Samsung Music' }
+  },
+  {
+    name: 'Progress track',
+    editSections: ['Page', 'Card globals'],
+    role: 'progress-track',
+    variant: { left: '1:42', right: '2:18', percent: 40 }
   }
 ];
 
-const TOOLKIT_PREVIEW_SCALE = 0.62;
+const TOOLKIT_PREVIEW_SCALE = 0.80;
 
 function previewRectForCard(card) {
   const role = card && card.role;
   const variant = (card && card.variant) || {};
   if (role === 'now-bar' && variant.type === 'charging') return { w: 248, h: 64, scale: TOOLKIT_PREVIEW_SCALE };
   if (role === 'now-bar' && variant.type === 'single-line') return { w: 381, h: 58, scale: TOOLKIT_PREVIEW_SCALE };
+  // Navigation copies need width for distance + instruction + ETA; height can grow with 2-line clamp.
+  if (role === 'now-bar' && variant.type === 'navigation') return { w: 400, h: 76, scale: TOOLKIT_PREVIEW_SCALE };
+  if (role === 'now-bar' && variant.type === 'media') return { w: 360, h: 96, scale: TOOLKIT_PREVIEW_SCALE };
   if (role === 'now-bar') return { w: 248, h: 64, scale: TOOLKIT_PREVIEW_SCALE };
   if (role === 'notif-card' || role === 'notif-card-ai') return { w: 415, h: 86, scale: TOOLKIT_PREVIEW_SCALE };
   if (role === 'toggle-chip') return { w: 408, h: 88, scale: TOOLKIT_PREVIEW_SCALE };
-  if (role === 'action-row' && variant.previewGallery) return { w: 415, h: 345, scale: TOOLKIT_PREVIEW_SCALE };
+  if (role === 'action-row' && variant.previewGallery) return { w: 415, h: 400, scale: TOOLKIT_PREVIEW_SCALE };
   if (role === 'action-row') return { w: 408, h: 96, scale: TOOLKIT_PREVIEW_SCALE };
+  if (role === 'media-card') return { w: 360, h: 200, scale: TOOLKIT_PREVIEW_SCALE };
+  if (role === 'progress-track') return { w: 360, h: 52, scale: TOOLKIT_PREVIEW_SCALE };
   if (role === 'focus-block' && variant.kind === 'weather') return { w: 415, h: 218, scale: TOOLKIT_PREVIEW_SCALE };
   if (role === 'focus-block' && variant.kind === 'calendar') return { w: 300, h: 128, scale: TOOLKIT_PREVIEW_SCALE };
-  if (role === 'focus-block' && variant.kind === 'input') return { w: 300, h: 124, scale: TOOLKIT_PREVIEW_SCALE };
+  if (role === 'focus-block' && variant.kind === 'input') return { w: 300, h: 168, scale: TOOLKIT_PREVIEW_SCALE };
   if (role === 'focus-block') return { w: 300, h: 112, scale: TOOLKIT_PREVIEW_SCALE };
   return { w: 415, h: 120, scale: TOOLKIT_PREVIEW_SCALE };
 }
@@ -943,12 +982,12 @@ const THEME_EDIT_SCHEMA = [
       { key: '--font-family-display',  label: 'Display family',   type: 'text' },
       { key: '--font-family-body',     label: 'Body family',      type: 'text' },
       { key: '--font-family-mono',     label: 'Mono family',      type: 'text' },
-      { key: '--font-size-xs',         label: 'Size · xs',        type: 'size', min: 8,  max: 18, step: 1 },
-      { key: '--font-size-sm',         label: 'Size · sm',        type: 'size', min: 10, max: 22, step: 1 },
-      { key: '--font-size-md',         label: 'Size · md',        type: 'size', min: 12, max: 28, step: 1 },
-      { key: '--font-size-lg',         label: 'Size · lg',        type: 'size', min: 14, max: 34, step: 1 },
-      { key: '--font-size-xl',         label: 'Size · xl',        type: 'size', min: 18, max: 48, step: 1 },
-      { key: '--font-size-display',    label: 'Size · display',   type: 'size', min: 24, max: 80, step: 1 },
+      { key: '--font-size-xs',         label: 'Size · xs (meta)',     type: 'size', min: 14, max: 18, step: 1 },
+      { key: '--font-size-sm',         label: 'Size · sm (label)',    type: 'size', min: 14, max: 22, step: 1 },
+      { key: '--font-size-md',         label: 'Size · md (body)',     type: 'size', min: 14, max: 28, step: 1 },
+      { key: '--font-size-lg',         label: 'Size · lg (title)',    type: 'size', min: 16, max: 34, step: 1 },
+      { key: '--font-size-xl',         label: 'Size · xl (display)',  type: 'size', min: 18, max: 48, step: 1 },
+      { key: '--font-size-display',    label: 'Size · hero heading', type: 'size', min: 20, max: 80, step: 1 },
       { key: '--font-weight-regular',  label: 'Weight · regular', type: 'weight' },
       { key: '--font-weight-medium',   label: 'Weight · medium',  type: 'weight' },
       { key: '--font-weight-semibold', label: 'Weight · semibold',type: 'weight' },
@@ -1019,7 +1058,7 @@ const THEME_EDIT_SCHEMA = [
     section: 'Calendar card',
     vars: [
       { key: '--card-calendar-accent',         label: 'Accent (cal icon)', type: 'color' },
-      { key: '--card-calendar-time-size',      label: 'Time size',         type: 'size', min: 12, max: 50, step: 1 },
+      { key: '--card-calendar-time-size',      label: 'Time size',         type: 'size', min: 14, max: 50, step: 1 },
       { key: '--card-calendar-time-weight',    label: 'Time weight',       type: 'weight' }
     ]
   },
@@ -1027,7 +1066,7 @@ const THEME_EDIT_SCHEMA = [
     section: 'Reminder card',
     vars: [
       { key: '--card-reminder-accent',         label: 'Accent (checkbox)', type: 'color' },
-      { key: '--card-reminder-task-size',      label: 'Task size',         type: 'size', min: 12, max: 28, step: 1 }
+      { key: '--card-reminder-task-size',      label: 'Task size',         type: 'size', min: 14, max: 28, step: 1 }
     ]
   },
   {
@@ -1268,7 +1307,7 @@ var _INSPECTOR_LAYERS = {
       test: function (el, root) {
         if (el.tagName !== 'SPAN') return false;
         var st = el.getAttribute('style') || '';
-        return st.indexOf('font-size:15px') >= 0 || st.indexOf('font-size:12px') >= 0;
+        return st.indexOf('font-size:15px') >= 0 || st.indexOf('--font-size-xs') >= 0;
       } },
     { label: 'Body', keys: ['--text-secondary', '--text-tertiary'],
       test: function (el, root) {
@@ -1285,7 +1324,7 @@ var _INSPECTOR_LAYERS = {
     { label: 'Distance', keys: ['--card-nav-distance-size', '--text-primary'],
       test: function (el, root) { return _styleChainHas(el, root, 'card-nav-distance-size'); } },
     { label: 'Instruction & ETA', keys: ['--text-primary', '--text-secondary', '--text-tertiary'],
-      test: function (el, root) { return el.tagName === 'DIV' && (el.getAttribute('style') || '').indexOf('font-size:13px') >= 0; } }
+      test: function (el, root) { return el.tagName === 'DIV' && (el.getAttribute('style') || '').indexOf('--font-size-sm') >= 0; } }
   ],
   'now-single-line': [
     { label: 'Waveform & accent', keys: ['--accent-primary'],
@@ -1627,10 +1666,9 @@ function updateFlatSchemeToggle() {
 // at boot and whenever the theme changes (re-render is cheap; the same
 // renderer that the main app uses produces consistent output).
 // ---------------------------------------------------------------------------
-//  Screen-mode preview — 3×2 grid of S26-ratio phones, each showing a
+//  Screen-mode preview — grid of S26-ratio phones, each showing a
 //  DIFFERENT scenario composed with the active theme's tokens. Every
-//  slider tweak (font, gap, padding, columns) re-renders all six in
-//  unison so the designer sees their work across screen types at once.
+//  slider tweak (font, gap, padding, columns) re-renders all in unison.
 //
 //  Each scenario is a list of "groups", each group is
 //    { items: [{role, variant}, ...], gridable: bool }.
@@ -1671,19 +1709,19 @@ const SCREEN_PREVIEW_SCENARIOS = [
     label: 'Cooking',
     header: 'Cooking Assistant',
     groups: [
-      // 1-col hero: now-bar timer occupies full width (always non-gridable)
       { gridable: false, items: [
         { role: 'now-bar', variant: { type: 'timer', label: 'Step 3 of 7', value: '02:30', subtext: 'Sauté kimchi' } }
       ]},
-      // 2-col: ingredients reference + next-step preview side-by-side
-      // — proves the "input summary" card is legible at narrower width
-      { gridable: true, items: [
-        { role: 'focus-block', variant: { kind: 'input', section: 'INGREDIENTS', topic: '6 items', detail: 'Have all on hand', facets: [] } },
-        { role: 'focus-block', variant: { kind: 'reminder', task: 'Add cold rice', due: 'Step 4', count: '', section: 'COMING UP' } }
-      ]},
-      // 1-col action row at the bottom (action rows always full-width)
+      // Single summary card: step topic + ingredient chips (1/2 stays one chip via facet array, not string split)
       { gridable: false, items: [
-        { role: 'action-row',  variant: { actions: [{ label: 'Done' }, { label: 'Repeat' }, { label: 'Next' }] } }
+        { role: 'focus-block', variant: { kind: 'input', section: 'STEP', topic: 'Add cold rice', detail: '', facets: ['Mushrooms 200 g', 'Garlic 2 cloves', 'Cream 1 cup', 'Parmesan 1/2 cup'] } }
+      ]},
+      { gridable: false, items: [
+        { role: 'action-row', variant: { actions: [
+          { label: 'Previous', icon: 'skip-back', kind: 'primary' },
+          { label: 'Repeat', icon: 'repeat' },
+          { label: 'Next', icon: 'skip-forward' }
+        ] } }
       ]}
     ]
   },
@@ -1714,7 +1752,7 @@ const SCREEN_PREVIEW_SCENARIOS = [
     groups: [
       // 2-col: two message threads side-by-side (inbox-style)
       { gridable: true, items: [
-        { role: 'focus-block', variant: { kind: 'message', sender: 'Sarah', preview: 'Running 10 min late', section: 'MESSAGES · 2 NEW' } },
+        { role: 'focus-block', variant: { kind: 'message', sender: 'Sarah', preview: 'see you at coffee shop', section: 'MESSAGES · 2 NEW' } },
         { role: 'focus-block', variant: { kind: 'message', sender: 'Mom', preview: 'Got the package — thanks!', section: '' } }
       ]},
       // 1-col: full-width "newest thread" hero with longer preview
@@ -1762,6 +1800,32 @@ const SCREEN_PREVIEW_SCENARIOS = [
       // 1-col action row
       { gridable: false, items: [
         { role: 'action-row',  variant: { actions: [{ label: 'Open' }, { label: 'Save' }, { label: 'Call' }] } }
+      ]}
+    ]
+  },
+  {
+    label: 'Music',
+    header: 'Your Music',
+    groups: [
+      { gridable: false, items: [
+        { role: 'action-row', variant: { actions: [
+          { label: 'Previous', icon: 'skip-back', kind: 'primary' },
+          { label: 'Pause', icon: 'pause' },
+          { label: 'Next', icon: 'skip-forward' }
+        ] } }
+      ]},
+      { gridable: true, items: [
+        { role: 'notif-card', variant: { title: 'Spotify', body: 'Now playing · Blend Mix', time: 'Live', glyph: '♪', accent: '#1DB954' } },
+        { role: 'progress-track', variant: { left: '1:42 elapsed', right: '2:18 left', percent: 38 } }
+      ]},
+      { gridable: false, items: [
+        { role: 'now-bar', variant: {
+          type: 'media',
+          title: 'Blinding Lights',
+          artist: 'The Weeknd',
+          marquee: 'Blinding Lights · The Weeknd · After Hours',
+          imgBg: '#E91E8C'
+        } }
       ]}
     ]
   }
@@ -2010,8 +2074,6 @@ function renderPreviewGrid() {
     stage.className = 'stage';
     const previewRect = rect;
     const previewScale = previewRect.scale || 1;
-    stage.style.width = Math.ceil(previewRect.w * previewScale) + 'px';
-    stage.style.height = Math.ceil(previewRect.h * previewScale) + 'px';
     let html = '';
     try {
       const comp = { role: card.role, variant: card.variant, content: card.content || {} };
@@ -2023,17 +2085,36 @@ function renderPreviewGrid() {
     } catch (e) {
       html = '<div style="padding:20px;color:var(--warning);">render error: ' + e.message + '</div>';
     }
-    stage.innerHTML = '<div class="stage-scale" style="width:' + previewRect.w + 'px;height:' + previewRect.h + 'px;transform:scale(' + previewScale + ');">' + html + '</div>';
+    stage.innerHTML =
+      '<div class="stage-scale" style="width:' + previewRect.w + 'px;' +
+      'min-height:' + previewRect.h + 'px;height:auto;' +
+      'transform:scale(' + previewScale + ');">' + html + '</div>';
     const scaleRoot = stage.firstElementChild;
     const cardRoot = scaleRoot && scaleRoot.firstElementChild;
     if (cardRoot) {
       cardRoot.style.width = previewRect.w + 'px';
-      cardRoot.style.height = previewRect.h + 'px';
+      cardRoot.style.minHeight = previewRect.h + 'px';
+      cardRoot.style.height = 'auto';
       cardRoot.style.maxWidth = 'none';
       cardRoot.style.flex = 'none';
     }
     stripGradientsForFlat(stage);
     normalizeFlatTextForScheme(stage);
+    if (scaleRoot) {
+      void scaleRoot.offsetHeight;
+      var crH = 0;
+      if (cardRoot && typeof cardRoot.getBoundingClientRect === 'function') {
+        crH = Math.ceil(cardRoot.getBoundingClientRect().height);
+      }
+      var logicalH = Math.max(previewRect.h, scaleRoot.scrollHeight, crH) + 12;
+      var scaledH = Math.ceil(logicalH * previewScale);
+      var scaledW = Math.ceil(previewRect.w * previewScale);
+      stage.style.width = scaledW + 'px';
+      stage.style.height = scaledH + 'px';
+    } else {
+      stage.style.width = Math.ceil(previewRect.w * previewScale) + 'px';
+      stage.style.height = Math.ceil(previewRect.h * previewScale) + 'px';
+    }
     stage.title = 'Double-click inside the card to inspect a part (Figma-style)';
     cell.appendChild(name);
     cell.appendChild(stage);

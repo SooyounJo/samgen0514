@@ -400,12 +400,12 @@
   function qsHalfToggle(iconHTML, title, subtitle) {
     return '<div style="width:199px;height:88px;max-width:199px;max-height:88px;' +
              QS_TILE_BG + QS_TILE_RADIUS +
-             'display:flex;flex-direction:column;justify-content:center;padding:16px 16px 16px 14px;overflow:hidden;flex:0 0 199px;min-width:199px;box-sizing:border-box;">' +
+             'display:flex;flex-direction:column;justify-content:center;padding:12px 16px;overflow:hidden;flex:0 0 199px;min-width:199px;box-sizing:border-box;">' +
              '<div style="display:flex;gap:10px;align-items:center;width:100%;min-width:0;">' +
                iconHTML +
                '<div style="flex:1 0 0;min-width:0;display:flex;flex-direction:column;overflow:hidden;">' +
-                 '<p style="font-family:' + FONT_SEMI + ';font-weight:600;font-size:16px;line-height:20px;color:var(--text-primary,#EFEEF2);margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + title + '</p>' +
-                 (subtitle ? '<p style="font-family:' + FONT_REGULAR + ';font-weight:400;font-size:14px;line-height:18px;color:var(--text-secondary,#CFCCCF);margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + subtitle + '</p>' : '') +
+                 '<p style="font-family:var(--font);font-weight:500;font-size:20px;line-height:1.3;color:#ffffff;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + title + '</p>' +
+                 (subtitle ? '<p style="font-family:var(--font);font-weight:500;font-size:16px;line-height:1.3;color:#8DE7E7;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + subtitle + '</p>' : '') +
                '</div>' +
              '</div>' +
            '</div>';
@@ -425,7 +425,9 @@
   }
 
   // Compact QS strip for previews/customizer. Uses the same Figma-extracted
-  // 88×88 and 199×88 tile atoms/assets as the full Quick Settings frame.
+  // 88×88 and 199×88 tile atoms as the full Quick Settings frame.
+  // Width is fluid: fixed 408px caused clipping when the preview card is
+  // narrower than the design spec (e.g. full-screen phone frame).
   function GalaxyQSToggleStrip(props) {
     var p = props || {};
     var toggles = Array.isArray(p.toggles) ? p.toggles : [];
@@ -442,11 +444,33 @@
       return /bluetooth/i.test((t && (t.name || t.label || t.icon)) || '');
     }) || { name: 'Bluetooth', sub: "Josh's Watch7" };
 
-    var row = qsSingleToggle(wifiIcon) + qsSingleToggle(mobileDataIcon) +
-      qsHalfToggle(bluetoothIcon, bluetooth.name || 'Bluetooth', bluetooth.sub || bluetooth.subtitle || "Josh's Watch7");
+    function qsStripSingleToggle(iconHTML) {
+      iconHTML = iconHTML || qsToggleIcon('add.svg', '11.98%', false);
+      return '<div style="flex:0 1 88px;min-width:44px;max-width:88px;aspect-ratio:1/1;min-height:0;align-self:center;' +
+               QS_TILE_BG + QS_TILE_RADIUS +
+               'display:flex;flex-direction:column;align-items:center;justify-content:center;padding:clamp(6px,2.5vw,16px);overflow:hidden;box-sizing:border-box;">' +
+               iconHTML +
+             '</div>';
+    }
+    function qsStripHalfToggle(iconHTML, title, subtitle) {
+      return '<div style="flex:1 1 0;min-width:0;max-width:199px;height:88px;min-height:88px;max-height:88px;align-self:center;' +
+               QS_TILE_BG + QS_TILE_RADIUS +
+               'display:flex;flex-direction:column;justify-content:center;padding:12px 16px;overflow:hidden;box-sizing:border-box;">' +
+               '<div style="display:flex;gap:10px;align-items:center;width:100%;min-width:0;">' +
+                 iconHTML +
+                 '<div style="flex:1 0 0;min-width:0;display:flex;flex-direction:column;overflow:hidden;">' +
+                   '<p style="font-family:var(--font);font-weight:500;font-size:20px;line-height:1.3;color:#ffffff;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + title + '</p>' +
+                   (subtitle ? '<p style="font-family:var(--font);font-weight:500;font-size:16px;line-height:1.3;color:#8DE7E7;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + subtitle + '</p>' : '') +
+                 '</div>' +
+               '</div>' +
+             '</div>';
+    }
 
-    return '<div style="width:100%;height:100%;min-height:88px;display:flex;align-items:center;justify-content:center;padding:0;box-sizing:border-box;overflow:visible;">' +
-      '<div style="width:408px;max-width:408px;display:flex;gap:15px;align-items:center;justify-content:center;overflow:visible;">' + row + '</div>' +
+    var row = qsStripSingleToggle(wifiIcon) + qsStripSingleToggle(mobileDataIcon) +
+      qsStripHalfToggle(bluetoothIcon, bluetooth.name || 'Bluetooth', bluetooth.sub || bluetooth.subtitle || "Josh's Watch7");
+
+    return '<div style="width:100%;height:100%;min-height:88px;min-width:0;display:flex;align-items:center;justify-content:center;padding:0;box-sizing:border-box;overflow:hidden;">' +
+      '<div style="width:100%;max-width:408px;min-width:0;display:flex;gap:clamp(6px,2vw,15px);align-items:center;justify-content:center;box-sizing:border-box;">' + row + '</div>' +
     '</div>';
   }
 

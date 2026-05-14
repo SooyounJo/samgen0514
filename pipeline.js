@@ -37,6 +37,18 @@ let REGISTRY = null;
 try { REGISTRY = JSON.parse(fs.readFileSync(REGISTRY_PATH, 'utf8')); }
 catch (e) { console.warn('[pipeline] component_registry.json not found or invalid:', e.message); }
 
+// Registry ids that are true chrome — shared by Step 3 role correction + preset stitch layout.
+const PIPELINE_CHROME_ROLE_IDS = new Set([
+  'status-bar', 'status-bar.default', 'status-bar.live-activity-chip',
+  'container.header', 'container.status-bar-app',
+  'container.app-shell-dark', 'container.app-shell-light',
+  'container.content-area',
+  'container.nav-buttons-light', 'container.nav-gestures-dark',
+  'lock-screen.clock', 'lock-screen.weather-date', 'lock-screen.shortcut-circle',
+  'gesture-bar', 'appbar', 'bottomnav', 'pill-tab', 'tab-bar',
+  'keyboard'
+]);
+
 // ---------------------------------------------------------------------------
 //  COMPONENT EMBEDDINGS  (Stage 3 RAG shortlist)
 //  Pre-computed by scripts/build_component_embeddings.js. At runtime we
@@ -73,9 +85,11 @@ const CONTEXT_INJECTION_RULES = {
   'agenda':        ['calendar_summary_card'],
   'schedule':      ['calendar_summary_card'],
   // Activity / state
-  'media-playing': [],   // now-bar.media-player handled by mandatory/render path
+  'media-playing': ['now-bar.media-player', 'media-card'],
   'driving':       ['navigation_turn_card', 'eta_card'],
   'navigation':    ['navigation_turn_card'],
+  'running':       ['navigation_turn_card'],
+  'workout':       ['navigation_turn_card', 'media_control_bar'],
   'commute':       ['eta_card'],
   // Communication
   'messages':      ['message_summary_card'],
@@ -84,7 +98,8 @@ const CONTEXT_INJECTION_RULES = {
   // Tasks
   'reminder':      ['reminder_card'],
   'tasks':         ['reminder_card'],
-  'todo':          ['reminder_card']
+  'todo':          ['reminder_card'],
+  'weather':       ['weather_glance_card']
 };
 
 // ---------------------------------------------------------------------------
@@ -157,11 +172,15 @@ function listLearnedRules() {
 // future improvement would be a tiny content-fill LLM call — but that
 // adds latency, and the user's priority is speed.
 const CONTEXT_INJECTION_PLACEHOLDERS = {
+  'weather_glance_card':    { label: 'Seoul · Partly cloudy', value: '23° · feels 21°' },
   'calendar_summary_card':  { label: 'Next up · Today',    value: 'Stand-up · 9:30 AM · Studio A' },
   'reminder_card':          { label: "Today's tasks",      value: '3 items · Due today' },
-  'message_summary_card':   { label: 'Messages · 2 new',   value: 'Alex: Running 10 min late' },
+  'message_summary_card':   { label: 'Messages · 2 new',   value: 'Alex: see you at coffee shop' },
   'eta_card':               { label: 'ETA · Home',         value: '12 min · Light traffic' },
   'navigation_turn_card':   { label: 'In 200 m',           value: 'Turn right onto Hangang-daero' },
+  'now-bar.media-player':   { label: 'APT.',               value: 'ROSÉ & Bruno Mars' },
+  'media-card':             { label: 'APT.',               value: 'ROSÉ & Bruno Mars' },
+  'media_control_bar':      { label: 'Dreams',             value: 'Fleetwood Mac · 1977' },
   'notification-card':      { label: 'Notification',       value: 'Tap to view' }
 };
 
@@ -782,8 +801,9 @@ Now Bar variant signals (consumed by generator.js for the lock-screen lower clus
 - bare-lock           — minimal lock screen, suppress all ambient widgets
 
 Activity signals (scenario facts; may also drive Now Bar choice indirectly):
-- media-playing, charging, workout, commute, meeting, idle,
+- media-playing, charging, workout, running, commute, meeting, idle,
   driving, walking, stationary
+- **running / outdoor activity with live directions:** include tags \`navigation\` or \`driving\` as appropriate so **navigation_turn_card** (maps-style turn pill) can be injected — not only \`workout\` (which is also used for indoor training).
 
 Time-of-day:
 - morning, afternoon, evening, night, dawn, dusk
@@ -792,7 +812,7 @@ System state:
 - low-battery, dnd, focus-mode, airplane-mode, silent
 
 Lock-screen extras:
-- weather                   — surface a weather widget / glance row
+- weather — surface weather / forecast content on GenUI: include tag "weather" when the scenario is a weather app or forecast; use weather_glance_card + reminder_card rows with newline-separated value lines for hourly / outlook / detail capsules (see planner rules).
 - temporal:secondary        — show secondary time / date row
 - notifications-pending     — there are pending notifications to surface
 - widgets-active            — widget row should be shown
@@ -1245,6 +1265,10 @@ Return STRICT JSON:
 }
 
 Rules:
+- STATIC LAYOUT MODE: each component_type you pick is a fixed, fully-styled
+  preset from the registry. Do NOT invent ad-hoc UI. Only vary content.label,
+  content.value, and optional icon — same visual shell as /customize Live Preview.
+
 - select components that match slot_requirements
 - respect selection_constraints.prefer / avoid
 - if conflict → preserve primary tasks
@@ -1267,19 +1291,45 @@ Selection guidance:
 - An action component should be selected only when the scenario implies the user can act (control_task type). Don't manufacture actions for inform-only scenarios.
 - Slot names should be DESCRIPTIVE (e.g. "current_instruction", "save_action", "weather_glance") — they will be carried into the layout for visual grouping.
 
+PRESET COMPONENT IDs (use these exact component_type strings — the client renders them as finished One UI atomics; your job is text only, not a novel layout):
+- weather_glance_card — weather tile (temp, condition, location, icon)
+- calendar_summary_card — calendar / schedule card (section, time, duration, title, location)
+- reminder_card — checklist / reminder tile (section, task, due)
+- message_summary_card — inbox / message preview (sender, preview, section)
+- eta_card — commute / arrival summary
+- input_summary_card — search or form recap with optional facet chips (NOT a generic “content card”)
+- notification.ai-regular — Galaxy AI summary strip (sparkle icon row, expandable affordance)
+- notification-card — standard app notification (service icon, title, time, body line)
+- media_control_bar — compact now-playing / transport (**or** now-bar.* registry ids when player context is explicit)
+Do NOT approximate these with primitives (btn/card/dialog) or free-form “card” types when a preset above fits the slot. The /customize Live Preview ("ALL THEMED CARDS") uses these same component_type values — reproducing that gallery in a generated screen is done by selecting these IDs and filling content; no separate "customize-only" renderer.
+
 Content authoring:
 - For each requiredComponent you pick, fill content.label and content.value with REAL, scenario-specific text — NOT placeholders.
 - The vocabulary block above shows "Content examples" for each component (label / value pairs across diverse scenarios). Use them as a TEMPLATE — match the structure and concreteness, then adapt the wording to the user's scenario.
 - NEVER emit content like "Title", "Subtitle", "Item", "Content", "Personalized guidance", "Adaptations based on preferences" — those are bad placeholders.
 - When two requiredComponents share the same componentType but different slots, their content.label and content.value MUST be DISTINCT and tailored to each slot's purpose.
 
-DIVERSITY RULES (anti-repetition — STRICTLY enforced):
-- Pick DIFFERENT componentTypes across slots. The same componentType MUST NOT appear more than TWICE in one plan (excluding chrome like status_bar / app_bar / gesture_bar / bottom_navigation_bar).
-- Each requiredComponent MUST have a UNIQUE label string. No two components may share the same label text (case-insensitive, whitespace-insensitive).
-- Prefer VARIETY: a screen with weather_card + calendar_event_card + reminder_list_item + message_preview_card is BETTER than 4× input_summary_card. Mix subject + state + context + action types.
-- input_summary_card is for FORM SUMMARIES ONLY (search recap, settings recap, completed-form readback). Do NOT use it as a generic content card. If you need a generic info tile, use weather_card / calendar_event_card / reminder_list_item / message_preview_card / eta_card / now_playing_card / shortcut_tile instead.
-- If a single concept (e.g. "ingredients ready") would naturally repeat 3+ times, instead express it ONCE in a list/grid component (reminder_list_item or shortcut_tile) — not as 3 separate cards with similar labels.
-- When in doubt between two similar componentTypes for the same slot, pick the MORE SPECIFIC one.`;
+DIVERSITY (soft guidance — prefer mix when it fits the scenario):
+- Reusing the SAME preset component_type several times with DIFFERENT content per slot is OK (e.g. multiple notification-card rows in a shade) — layout stays identical, only strings change.
+- Prefer mixing weather / calendar / reminder / message / notifications when the scenario truly calls for it; do not force variety if the user asked for a homogeneous list.
+- Duplicated label text across different slots is discouraged only when it adds no new information; otherwise vary titles realistically.
+- input_summary_card = search/form recap with facets. For weather / calendar / notifications use their dedicated preset IDs above.
+- When unsure, prefer the most specific preset ID that matches the slot.
+
+Weather / forecast dashboards (app surface):
+- Emit weather_glance_card for the hero current-conditions tile when the scenario asks for weather.
+- For "next hours", "5-day", "details" sections, use separate reminder_card (preferred) or input_summary_card entries: put the section title in content.label (e.g. "NEXT 6 HOURS", "5-DAY OUTLOOK", "DETAILS") and put ONE ROW PER LINE in content.value (newline-separated). The client renders each line as a glass capsule chip — do not cram all rows into a single paragraph.
+- **Density cap (enforced in UI):** hourly / "next hours" sections accept at most **4** chip lines — prefer 3–4 well-spaced rows (merge similar times) rather than 6+ skinny pills. For "today" metrics (precip, wind, humidity, UV), prefer **one** paragraph line or **2** short lines, not four separate chips unless truly necessary.
+
+Running / fitness / navigation (app surface):
+- Prefer **registry presets** with full One UI chrome — do not substitute plain input_summary_card when a specialized ID fits.
+- **navigation_turn_card** — live turn-by-turn strip (arrow · distance · street instruction · optional ETA divider). Use for outdoor run, ride, walk with route guidance; content.label = distance ("In 200 m"), content.value = imperative turn text.
+- **now-bar.dual-line** / **now-bar.single-line** / **now-bar.media-player** / **media_control_bar** — in-progress status pills (two-line status, single big metric, or audio). Pick **now-bar.single-line** for one dominant number (pace, heart zone); **now-bar.dual-line** for title+subtitle (e.g. split · lap time).
+- When the scenario is **workout** or **running**, the interpreter often emits tag \`workout\`; still pick **navigation_turn_card** when the copy describes turns, streets, or distances to the next maneuver.
+
+Music / playback (app or lock):
+- Emit context tag **media-playing** (and often **now-bar:media**) when audio is active — the pipeline injects **now-bar.media-player** (pill transport + art) and **media-card** (larger album + controls) with real track-shaped placeholders.
+- Prefer **now-bar.media-player** or **media_control_bar** for the bottom / ambient strip; **media-card** for the hero now-playing block. Do not collapse these into generic reminder_card / input_summary_card when the scenario is clearly music, podcast, or radio.`;
 }
 
 // ---------------------------------------------------------------------------
@@ -1434,7 +1484,10 @@ You receive:
 - a selected component list from STEP 3
 
 Your job is to produce a strict layout plan.
-You must compose, not invent.
+Each selected component already has a fixed visual design in the client; you only
+assign groups, order, and visibility — not new chrome or ad-hoc HTML.
+
+You must compose from the given list, not invent.
 
 You must NOT:
 - invent new components
@@ -1586,6 +1639,7 @@ LAYOUT TEMPLATE INFERENCE (Tier 3 — pick a richer container shape based on the
 - APP surface with chip rows OR action rows → those go in horizontal-stack groups; the rest stays vertical-stack.
 - NOTIFICATION-SHADE overlay → vertical-stack with notif-card / notif-card-ai stacked (no grid).
 - Pick container='grid' when groups[].children would otherwise repeat the same component type 3+ times (e.g. 4 toggle chips, 4 widgets) — grid avoids the "wall of identical cards" anti-pattern.
+- COOKING / recipe / kitchen assistant on an APP surface: target a **single fixed viewport — no scrolling inside the phone frame**. In primary-task use **vertical-stack** for the main recipe column (avoid **grid** for that column). Prefer **at most ~2 compact state lines** (current step + progress) and **one** optional short context card — not 3+ tall focus-blocks with long body text. Use **one** action_chip_row with every ingredient in **value** as **comma-separated** lines; each line may include fractions like "Parmesan 1/2 cup" (numeric slashes are preserved by the renderer). **Cap** ingredient chips at **5–6**. Bottom controls: **one** action row (Previous / Repeat / Next). Do not emit one action_chip_row per ingredient.
 
 CONTAINER COVERAGE EXPECTATION:
 - Don't always pick vertical-stack. A typical good output uses 2-3 different container types across its groups (e.g., chrome=vertical-stack, primary-task=grid for widgets, supporting=vertical-stack for content cards).`;
@@ -2036,20 +2090,138 @@ function _resolveFeatures(input) {
     contentBag:        f.contentBag         !== false,
     rag:               f.rag                !== false,
     explain:           f.explain            !== false,
-    dedup:             f.dedup              !== false,
-    typeCap:           f.typeCap            !== false,
+    // Opt-in: static “same preset × N, only text changes” layouts need these OFF
+    // unless the client explicitly checks the GenUI pipeline toggles.
+    dedup:             f.dedup              === true,
+    typeCap:           f.typeCap            === true,
     autoGrid:          f.autoGrid           !== false,
     chromeMigration:   f.chromeMigration    !== false,
     roleReorder:       f.roleReorder        !== false,
     composerBackfill:  f.composerBackfill   !== false,
     mandatoryInject:   f.mandatoryInject    !== false,
-    contextInject:     f.contextInject      !== false
+    contextInject:     f.contextInject      !== false,
+    // Default ON: skip composer LLM — stitch selected presets in reference order
+    // (customize-gallery “drag tiles” model). Turn off to restore LLM composer.
+    presetStitch:      f.presetStitch       !== false
+  };
+}
+
+function _isChromePlanEntry(c) {
+  if (!c) return false;
+  return c.role === 'chrome'
+    || c._source === 'mandatory-inject'
+    || PIPELINE_CHROME_ROLE_IDS.has(c.componentType);
+}
+
+/**
+ * Deterministic Step-4 layout: one layout group per chrome strip + one primary-task
+ * group where every selected content preset is a single child (same registry shell as
+ * /customize). Order follows Generator reference layout when available.
+ */
+function buildPresetStitchComposed({ planningPacket, plan, referenceLayout, scenarioText }) {
+  const uiState = (planningPacket && planningPacket.uiState) || {};
+  const scenario = scenarioText || '';
+  const comps = (plan && plan.requiredComponents) || [];
+  const refOrder = (referenceLayout && referenceLayout.orderedComponents) || [];
+  const orderIdx = {};
+  refOrder.forEach((oc, i) => {
+    const id = oc.componentId;
+    if (id && orderIdx[id] === undefined) orderIdx[id] = i;
+  });
+  function sortByRef(a, b) {
+    const ia = orderIdx[a.componentType];
+    const ib = orderIdx[b.componentType];
+    if (ia != null && ib != null && ia !== ib) return ia - ib;
+    if (ia != null && ib == null) return -1;
+    if (ia == null && ib != null) return 1;
+    return (a._stitchIdx ?? 0) - (b._stitchIdx ?? 0);
+  }
+  const indexed = comps.map((c, i) => Object.assign({}, c, { _stitchIdx: i }));
+  const chromeComps = indexed.filter(_isChromePlanEntry).sort(sortByRef);
+  const contentComps = indexed.filter(c => !_isChromePlanEntry(c)).sort(sortByRef);
+
+  const pad = (referenceLayout && referenceLayout.padding) || { top: 16, right: 18, bottom: 0, left: 18 };
+  const gap = (referenceLayout && referenceLayout.gap) != null ? referenceLayout.gap : 12;
+  const glance = uiState.attentionMode === 'glanceable';
+  const avoidGrid = /recipe|cooking|kitchen|instruction|step\b/i.test(scenario);
+  // 2-column grid ONLY when there are exactly two content tiles — a phone
+  // viewport cannot fit 3–4 presets side-by-side without paper-thin columns
+  // and per-character wrapping (weather "18°" broken vertically, etc.).
+  // Three or more presets → full-width vertical stack (readable, One UI–like).
+  let useGrid = !avoidGrid && contentComps.length === 2;
+  if (glance) {
+    useGrid = !avoidGrid && contentComps.length === 2;
+  }
+  const rootContainer = glance
+    ? 'vertical-stack'
+    : ((referenceLayout && referenceLayout.container) || 'vertical-stack');
+
+  const bgPolicy = uiState.backgroundPolicy || 'scrim-over-wallpaper';
+
+  const groups = [];
+  if (chromeComps.length) {
+    groups.push({
+      groupId: 'group_chrome_preset_stitch',
+      purpose: 'Chrome (reference order)',
+      role: 'chrome',
+      container: 'vertical-stack',
+      gap: Math.max(6, gap - 4),
+      children: chromeComps.map(c => ({
+        componentId: c.componentType,
+        variant: c.variantHint || 'default',
+        slot: c.slot || '',
+        role: 'chrome',
+        placement: 'top',
+        priority: c.priority != null ? c.priority : 1,
+        visibility: 'visible'
+      }))
+    });
+  }
+  if (contentComps.length) {
+    const g = {
+      groupId: 'group_primary_preset_stitch',
+      purpose: 'Registered presets (stitched)',
+      role: 'primary-task',
+      container: useGrid ? 'grid' : 'vertical-stack',
+      gap,
+      children: contentComps.map(c => ({
+        componentId: c.componentType,
+        variant: c.variantHint || 'default',
+        slot: c.slot || '',
+        role: c.role || 'subject',
+        placement: useGrid ? 'middle' : 'full-width',
+        priority: c.priority != null ? c.priority : 2,
+        visibility: 'visible'
+      }))
+    };
+    if (useGrid) g.gridColumns = 2;
+    groups.push(g);
+  }
+
+  return {
+    layoutPlan: {
+      container: rootContainer,
+      backgroundPolicy: bgPolicy,
+      padding: pad,
+      gap,
+      groups
+    },
+    composerNotes: {
+      layoutStrategy: 'preset-stitch',
+      priorityPreservation: [],
+      collapsedComponents: [],
+      whyThisStructure: [
+        'Deterministic composer: each STEP-3 component is one preset tile in reference order (gallery stitch).'
+      ]
+    }
   };
 }
 
 async function runComposeLayout({ planningPacket, plan, llmCall, viewport, scenarioText, fastMode, features }) {
   const _F = _resolveFeatures(features);
-  if (!llmCall)        throw new Error('runComposeLayout requires llmCall(systemPrompt, userMessage)');
+  if (!llmCall && !_F.presetStitch) {
+    throw new Error('runComposeLayout requires llmCall(systemPrompt, userMessage)');
+  }
   if (!planningPacket) throw new Error('runComposeLayout requires planningPacket');
   if (!plan)           throw new Error('runComposeLayout requires plan');
   const scenario = scenarioText || '';
@@ -2115,43 +2287,41 @@ async function runComposeLayout({ planningPacket, plan, llmCall, viewport, scena
     console.warn('[pipeline] Reference layout generation failed (non-fatal):', e.message);
   }
 
-  const refSection = referenceLayout
-    ? `\n\nReference Layout (from design system rules — follow this ordering):\n${JSON.stringify(referenceLayout, null, 2)}`
-    : '';
+  let composed;
+  if (_F.presetStitch) {
+    composed = buildPresetStitchComposed({
+      planningPacket,
+      plan,
+      referenceLayout,
+      scenarioText: scenario
+    });
+    console.log('[pipeline] Preset stitch: deterministic layout (composer LLM skipped).');
+  } else {
+    const refSection = referenceLayout
+      ? `\n\nReference Layout (from design system rules — follow this ordering):\n${JSON.stringify(referenceLayout, null, 2)}`
+      : '';
 
-  // Surface-specific KB context: ORCH frame/stacking/nesting plus the
-  // assembly chapter for this base surface (lock / home / QS overlay),
-  // plus all evolve.md lessons. Also re-inject scenarioText so the
-  // composer can account for intent nuance lost in Step 1→2→3 paraphrasing.
-  const kbContext = buildPromptContext('composer', planningPacket.uiState);
+    const kbContext = buildPromptContext('composer', planningPacket.uiState);
+    const selectedIds = (plan.requiredComponents || []).map(c => c.componentType);
+    const variantRef  = buildVariantReference(selectedIds);
 
-  // Focused variant reference: the composer's invalid_variant violations
-  // dominated the violation log (26/37 across a 10-scenario test). Showing
-  // the closed variant set per selected component makes that physically
-  // impossible to repeat.
-  const selectedIds = (plan.requiredComponents || []).map(c => c.componentType);
-  const variantRef  = buildVariantReference(selectedIds);
+    const userMessage =
+      kbContext + '\n\n---\n\n' +
+      (variantRef ? variantRef + '\n\n---\n\n' : '') +
+      (scenario ? `User Scenario:\n${scenario}\n\n` : '') +
+      `Normalized Planning Packet:\n${JSON.stringify(planningPacket)}\n\n` +
+      `Selected Components:\n${JSON.stringify(plan)}\n\n` +
+      `IMPORTANT — closed-world rule:\n` +
+      `1. groups[].children[].componentId MUST come ONLY from the componentType field of the entries in Selected Components above. Never introduce IDs that are not in that list, even if the surface "feels" incomplete.\n` +
+      `2. EVERY entry in Selected Components MUST appear at least once in groups[].children[]. Silent omission is a hard error.\n` +
+      `3. DEFAULT visibility for every child is "visible". Mark a child "collapsed" only if it is priority=3 AND densityMode is "compressed" AND you genuinely lack vertical room. Never collapse priority=1 or priority=2 by default — the user explicitly asked for them.` +
+      refSection;
 
-  // Original prompt structure restored — moving kbContext + closed-world
-  // rule into the system prompt regressed UI quality (the LLM lost the
-  // "Selected Components above" anchor and emitted shallower layouts with
-  // fewer components per group).
-  const userMessage =
-    kbContext + '\n\n---\n\n' +
-    (variantRef ? variantRef + '\n\n---\n\n' : '') +
-    (scenario ? `User Scenario:\n${scenario}\n\n` : '') +
-    `Normalized Planning Packet:\n${JSON.stringify(planningPacket)}\n\n` +
-    `Selected Components:\n${JSON.stringify(plan)}\n\n` +
-    `IMPORTANT — closed-world rule:\n` +
-    `1. groups[].children[].componentId MUST come ONLY from the componentType field of the entries in Selected Components above. Never introduce IDs that are not in that list, even if the surface "feels" incomplete.\n` +
-    `2. EVERY entry in Selected Components MUST appear at least once in groups[].children[]. Silent omission is a hard error.\n` +
-    `3. DEFAULT visibility for every child is "visible". Mark a child "collapsed" only if it is priority=3 AND densityMode is "compressed" AND you genuinely lack vertical room. Never collapse priority=1 or priority=2 by default — the user explicitly asked for them.` +
-    refSection;
-
-  const FAST_HINT_C = '\n\n[FAST MODE] Keep response MINIMAL. composerNotes.whyThisStructure[] must have at most 2 entries. priorityPreservation[] at most 2 entries. collapsedComponents[] at most 1 entry. Keep layoutPlan complete and accurate — do NOT trim groups or children.';
-  const sysComp  = buildComposerPrompt() + (fastMode ? FAST_HINT_C : '');
-  const raw      = await llmCall(sysComp, userMessage);
-  const composed = normalizeComposerOutput(raw);
+    const FAST_HINT_C = '\n\n[FAST MODE] Keep response MINIMAL. composerNotes.whyThisStructure[] must have at most 2 entries. priorityPreservation[] at most 2 entries. collapsedComponents[] at most 1 entry. Keep layoutPlan complete and accurate — do NOT trim groups or children.';
+    const sysComp  = buildComposerPrompt() + (fastMode ? FAST_HINT_C : '');
+    const raw      = await llmCall(sysComp, userMessage);
+    composed = normalizeComposerOutput(raw);
+  }
   const uiState  = planningPacket.uiState;
 
   // ── Post-composer chrome enforcement ──────────────────────────────
@@ -2489,6 +2659,11 @@ async function runSelect({ scenarioText, interpretation, planningPacket, rawComb
         || [];
       const finalIds = topIds.slice();
       mandatoryIds.forEach(id => { if (!finalIds.includes(id)) finalIds.push(id); });
+      // Always include every semantic-allowed preset (matches /customize card gallery
+      // IDs) so RAG retrieval cannot drop weather/calendar/notification variants.
+      (allowedSemanticComponentTypes() || []).forEach(id => {
+        if (!finalIds.includes(id)) finalIds.push(id);
+      });
       vocabOverride = buildShortlistedVocabBlock(finalIds);
       const elapsed = Date.now() - t0;
       shortlistInfo = { k: SHORTLIST_K, retrieved: topIds.length, finalSize: finalIds.length, elapsedMs: elapsed };
@@ -2531,16 +2706,6 @@ async function runSelect({ scenarioText, interpretation, planningPacket, rawComb
   // has role=chrome but its componentType is NOT a registered chrome
   // primitive, demote it to its semantic-correct role (action / feedback
   // / context). Mandatory-injected ones are exempt.
-  const CHROME_ROLE_ALLOWED_IDS = new Set([
-    'status-bar', 'status-bar.default', 'status-bar.live-activity-chip',
-    'container.header', 'container.status-bar-app',
-    'container.app-shell-dark', 'container.app-shell-light',
-    'container.content-area',
-    'container.nav-buttons-light', 'container.nav-gestures-dark',
-    'lock-screen.clock', 'lock-screen.weather-date', 'lock-screen.shortcut-circle',
-    'gesture-bar', 'appbar', 'bottomnav', 'pill-tab', 'tab-bar',
-    'keyboard'
-  ]);
   // Two patterns the LLM uses when (mistakenly) trying to satisfy a
   // "system status" placeholder for an app surface:
   //   1) label is a generic status word ("Status", "System status", …)
@@ -2565,7 +2730,7 @@ async function runSelect({ scenarioText, interpretation, planningPacket, rawComb
     const survivors = [];
     plan.requiredComponents.forEach(c => {
       // Pass-through: not a misuse case
-      if (c.role !== 'chrome' || c._source === 'mandatory-inject' || CHROME_ROLE_ALLOWED_IDS.has(c.componentType)) {
+      if (c.role !== 'chrome' || c._source === 'mandatory-inject' || PIPELINE_CHROME_ROLE_IDS.has(c.componentType)) {
         survivors.push(c);
         return;
       }
@@ -2704,15 +2869,13 @@ async function runSelect({ scenarioText, interpretation, planningPacket, rawComb
   }
 
   // ── Per-type cap ───────────────────────────────────────────────────
-  // Even after label-dedup, the selector sometimes still picks 4-5
-  // distinct-labeled cards of the same componentType (e.g. 4 different
-  // input_summary_cards). On a single screen that reads as monotonous —
-  // real Samsung One UI rarely has more than 3 identical-format widgets
-  // on one surface. Cap at 3 per componentType. Drops are tail-first
-  // (keep first 3 in plan order, drop rest).
+  // Even after label-dedup, the selector sometimes still picks many
+  // distinct-labeled cards of the same componentType. Cap per type when
+  // typeCap feature is enabled (default: off; see _resolveFeatures).
+  // Drops are tail-first (keep first N in plan order, drop rest).
   // Skippable via features.typeCap=false.
   if (_F.typeCap && Array.isArray(plan.requiredComponents)) {
-    const TYPE_CAP = 3;
+    const TYPE_CAP = 24;
     const counts = {};
     const capSurvivors = [];
     let capDropped = 0;
@@ -2901,9 +3064,9 @@ Rules:
   entries — across keys or within array fields — may share the same label.
 - Arrays must contain 3 DIFFERENT entries (varied subjects, different verbs,
   different specifics).  Each entry is a complete tile, NOT a placeholder.
-- label is a short uppercase or sentence-case heading (≤ 28 chars, no emoji).
-- value is the actual scenario-grounded body content (≤ 80 chars, concrete
-  nouns / numbers / times / names — NOT "data here", NOT "TBD").
+- label / value: use any length needed for a realistic line; the renderer
+  ellipsizes long strings in tight cells. Avoid empty or generic filler
+  ("Title", "TBD"). No emoji required.
 - icon is OPTIONAL — null is fine. If you set one, use a single Material-style
   symbol name (e.g. "schedule", "bolt", "wifi") — never an emoji.
 - Use the SCENARIO to populate everything. If the scenario is cooking, the

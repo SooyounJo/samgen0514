@@ -1002,7 +1002,9 @@
         "home",
         "glanceable",
         "driving",
-        "minimal-touch"
+        "minimal-touch",
+        "app",
+        "focused"
       ],
       "states": [
         "default",
@@ -1138,6 +1140,7 @@
       "orchestration_type": "media-card",
       "allowed_contexts": [
         "app",
+        "focused",
         "quick-settings",
         "glanceable"
       ],
@@ -1349,7 +1352,9 @@
       "allowed_contexts": [
         "driving",
         "glanceable",
-        "quick-view"
+        "quick-view",
+        "app",
+        "focused"
       ],
       "states": [
         "default",
@@ -1410,7 +1415,9 @@
       "allowed_contexts": [
         "driving",
         "glanceable",
-        "quick-view"
+        "quick-view",
+        "app",
+        "focused"
       ],
       "states": [
         "default",
@@ -1594,7 +1601,9 @@
         "glanceable",
         "home",
         "lock",
-        "quick-view"
+        "quick-view",
+        "app",
+        "focused"
       ],
       "states": [
         "default",
@@ -1656,7 +1665,9 @@
         "glanceable",
         "home",
         "lock",
-        "quick-view"
+        "quick-view",
+        "app",
+        "focused"
       ],
       "states": [
         "default",
@@ -1717,7 +1728,9 @@
         "driving",
         "glanceable",
         "minimal-touch",
-        "quick-view"
+        "quick-view",
+        "app",
+        "focused"
       ],
       "states": [
         "default",
@@ -1780,7 +1793,8 @@
         "app",
         "home",
         "lock",
-        "glanceable"
+        "glanceable",
+        "focused"
       ],
       "states": [
         "default",
@@ -2353,10 +2367,15 @@
       "id": "now-bar.media-player",
       "category": "widget",
       "orchestration_type": "now-bar",
-      "_figma_node": "744:3582",
+      "_figma_node": "752:7978",
       "allowed_contexts": [
         "lock",
-        "home"
+        "home",
+        "app",
+        "focused",
+        "glanceable",
+        "driving",
+        "minimal-touch"
       ],
       "states": [
         "default"
@@ -2416,10 +2435,15 @@
       "id": "now-bar.dual-line",
       "category": "widget",
       "orchestration_type": "now-bar",
-      "_figma_node": "744:3582",
+      "_figma_node": "752:7980",
       "allowed_contexts": [
         "lock",
-        "home"
+        "home",
+        "app",
+        "focused",
+        "glanceable",
+        "driving",
+        "minimal-touch"
       ],
       "states": [
         "default"
@@ -2470,10 +2494,15 @@
       "id": "now-bar.single-line",
       "category": "widget",
       "orchestration_type": "now-bar",
-      "_figma_node": "744:3582",
+      "_figma_node": "752:7985",
       "allowed_contexts": [
         "lock",
-        "home"
+        "home",
+        "app",
+        "focused",
+        "glanceable",
+        "driving",
+        "minimal-touch"
       ],
       "states": [
         "default"
@@ -2516,11 +2545,15 @@
     "now-bar.charging": {
       "id": "now-bar.charging",
       "category": "widget",
-      "orchestration_type": "now-bar-alert",
-      "_figma_node": "744:3582",
+      "orchestration_type": "now-bar",
+      "_figma_node": "752:7994",
       "allowed_contexts": [
         "lock",
-        "home"
+        "home",
+        "app",
+        "focused",
+        "glanceable",
+        "driving"
       ],
       "states": [
         "default"
@@ -4636,7 +4669,13 @@
       "navigation_turn_card",
       "reminder_card",
       "quick_toggle_row",
-      "input_summary_card"
+      "input_summary_card",
+      "notification-card",
+      "notification.ai-regular",
+      "now-bar.media-player",
+      "now-bar.dual-line",
+      "now-bar.single-line",
+      "media-card"
     ],
     "allowed_types": [
       "btn-contained",

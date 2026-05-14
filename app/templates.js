@@ -78,11 +78,17 @@ const PIPELINE_FALLBACK_TEMPLATES = {
     <span style="font-size:16px;color:var(--text-2);cursor:pointer;">&#9197;</span></div>`,
   // ── Semantic vocabulary fallbacks (3-step pipeline) ──────────────────────
   'action_chip_row': (content) => {
-    const chips = Array.isArray(content.chips) && content.chips.length
-      ? content.chips
-      : (content.value ? String(content.value).split(/[,\|]/).map(s => s.trim()) : ['Action 1', 'Action 2', 'Action 3']);
-    return `<div style="display:flex;gap:8px;flex-wrap:wrap;">${
-      chips.map(c => `<div style="padding:8px 14px;border-radius:999px;background:var(--surface-2);border:1px solid rgba(255,255,255,0.08);font-size:13px;color:#fff;" contenteditable="true">${c}</div>`).join('')
+    let chips = Array.isArray(content.chips) && content.chips.length ? content.chips : null;
+    if (!chips) {
+      const raw = content.value || content.label || '';
+      const splitFn = typeof window.splitListPreservingNumericFractions === 'function'
+        ? window.splitListPreservingNumericFractions
+        : (r) => String(r || '').split(/[,\|]/).map(s => s.trim()).filter(Boolean);
+      chips = raw ? splitFn(raw) : ['Action 1', 'Action 2', 'Action 3'];
+    }
+    if (chips.length > 24) chips = chips.slice(0, 24);
+    return `<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;align-content:center;width:100%;max-width:100%;min-width:0;box-sizing:border-box;">${
+      chips.map(c => `<div style="padding:8px 14px;border-radius:999px;background:var(--surface-2);border:1px solid rgba(255,255,255,0.08);font-size:13px;color:#fff;flex:0 1 auto;min-width:0;max-width:100%;" contenteditable="true">${c}</div>`).join('')
     }</div>`;
   },
   'calendar_summary_card': (content) => `<div class="oui-card" style="display:flex;align-items:center;gap:12px;">

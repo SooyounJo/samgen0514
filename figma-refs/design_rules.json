@@ -18,29 +18,65 @@
       "bold":     700
     },
     "size": {
-      "micro":   10,
-      "caption": 12,
-      "label":   14,
-      "body":    15,
-      "title":   16,
-      "heading": 18,
-      "large":   20,
+      "_minPx": 14,
+      "_note": "UI 텍스트 최소 14px. hero(시계)·기타 스페셜만 예외.",
+      "micro":   14,
+      "caption": 14,
+      "label":   16,
+      "body":    18,
+      "title":   20,
+      "heading": 22,
+      "large":   24,
       "date":    24,
       "headline":26,
       "hero":    112
+    },
+    "typeScale": {
+      "_description": "5단 공개 스케일. 최소 단계 meta = 14px. legacy typography.size와 대응: meta↔caption/micro, label↔label, body↔body, title↔heading, display↔headline",
+      "display": { "fontSize": 26, "fontWeight": 700, "lineHeightPx": 32, "letterSpacingPx": 0, "color": "heading" },
+      "title":   { "fontSize": 22, "fontWeight": 600, "lineHeightPx": 28, "letterSpacingPx": 0, "color": "heading" },
+      "body":    { "fontSize": 18, "fontWeight": 400, "lineHeightPx": 24, "letterSpacingPx": 0, "color": "primary" },
+      "label":   { "fontSize": 16, "fontWeight": 500, "lineHeightPx": 22, "letterSpacingPx": 0, "color": "widgetLabel" },
+      "meta":    { "fontSize": 14, "fontWeight": 400, "lineHeightPx": 18, "letterSpacingPx": 0.1, "color": "translucentLabel" }
+    },
+    "_sizeTierMap": {
+      "_usage": "typography.size 키 → typeScale 키 (기본 line-height·letter-spacing 조회용). hero는 시계 전용.",
+      "micro": "meta",
+      "caption": "meta",
+      "label": "label",
+      "body": "body",
+      "title": "title",
+      "heading": "title",
+      "large": "display",
+      "date": "display",
+      "headline": "display",
+      "hero": "hero"
     },
     "lineHeight": {
       "tight":   12,
       "snug":    14,
       "normal":  20,
+      "relaxed": 18,
+      "body":    24,
+      "title":   28,
+      "display": 32,
       "hero":    82
     },
     "letterSpacing": {
-      "tight":   -2,
-      "normal":   0,
-      "micro":    0.1,
-      "small":    0.15,
-      "wide":     0.24
+      "_rules": [
+        "일반 문장·제목(display/title/body/label)·버튼 라벨: 토큰 none(0)만 사용.",
+        "보조 숫자/메타(typeScale.meta): 기본값 typeScale.meta.letterSpacingPx(소량).",
+        "스테이터스바 캐리어: statusCarrier. 대문자 섹션 라벨 한 줄만: sectionUppercase.",
+        "디스플레이 히어로(hero 112)·날짜 숫자: heroDisplay·date숫자는 none 또는 tight 중 하나만."
+      ],
+      "none": 0,
+      "tight": -0.5,
+      "uiDense": 0.08,
+      "micro":   0.1,
+      "small":   0.15,
+      "wide":    0.24,
+      "statusCarrier": 0.15,
+      "sectionUppercase": 0.4
     },
     "color": {
       "primary":          "#FFFFFF",
@@ -52,6 +88,24 @@
       "sectionLabel":     "rgba(255,255,255,0.5)",
       "translucentLabel": "rgba(255,255,255,0.75)"
     }
+  },
+
+  "layoutRhythm": {
+    "_rules": [
+      "padding·margin·gap은 반드시 spacing(xs~4xl) 또는 surface.outerPaddingX/Top 또는 statusBar 패딩과 정확히 일치하는 값만 사용.",
+      "임의 픽셀(예: 13px·19px 패딩) 금지. 필요하면 가장 가까운 spacing 토큰으로 반올림.",
+      "같은 텍스트 블록 안 인접 줄 gap: spacing[textStackGapKey]. 다른 문단 간: spacing[textParagraphGapKey].",
+      "아이콘+텍스트 한 줄: gap은 spacing[inlineIconGapKey]만.",
+      "카드·글래스 패널 안 카피 패딩: spacing[cardPaddingVerticalKey]/[cardPaddingHorizontalKey]."
+    ],
+    "textStackGapKey": "sm",
+    "textParagraphGapKey": "md",
+    "inlineIconGapKey": "sm",
+    "listRowGapKey": "md",
+    "chipRowGapKey": "md",
+    "cardPaddingVerticalKey": "xxl",
+    "cardPaddingHorizontalKey": "xl",
+    "groupSectionGapKey": "4xl"
   },
 
   "glass": {
@@ -82,16 +136,16 @@
   },
 
   "radius": {
-    "small":     10,
-    "card":      14,
-    "medium":    18,
+    "small":     20,
+    "card":      20,
+    "medium":    20,
     "widget":    20,
     "pill":      32,
-    "dialog":    36,
-    "panel":     40,
-    "container": 50,
+    "dialog":    20,
+    "panel":     20,
+    "container": 20,
     "circle":    63.636,
-    "_usage": "small=thumbnails, card=notifications, widget=lock widgets, pill=now-bar, dialog=media cards, panel=surface shells, container=QS tiles, circle=toggle buttons"
+    "_usage": "Non-capsule surfaces share 20px (card/widget/dialog/panel/container). Pill/circle tokens + component inline radii reserved for elongated capsules (now-bar, notification strip, voice pill, sliders, toggle circles)."
   },
 
   "spacing": {
